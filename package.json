@@ -1,0 +1,42 @@
+{
+  "name": "@latentminds/pi-quotas",
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "private": false,
+  "keywords": ["pi-package", "pi-extension", "pi"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/latentminds/pi-quotas"
+  },
+  "pi": {
+    "extensions": [
+      "./src/extensions/core/index.ts",
+      "./src/extensions/command-quotas/index.ts",
+      "./src/extensions/usage-status/index.ts",
+      "./src/extensions/quota-warnings/index.ts"
+    ]
+  },
+  "files": ["src", "README.md"],
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "0.61.0",
+    "@mariozechner/pi-tui": "0.61.0"
+  },
+  "peerDependenciesMeta": {
+    "@mariozechner/pi-coding-agent": { "optional": true },
+    "@mariozechner/pi-tui": { "optional": true }
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "0.61.0",
+    "@mariozechner/pi-tui": "0.61.0",
+    "@sinclair/typebox": "^0.34.48",
+    "@types/node": "^25.0.10",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  }
+}
