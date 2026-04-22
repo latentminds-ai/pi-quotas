@@ -1,65 +1,87 @@
-# OpenRouter Integration ✓ COMPLETED
+# OpenRouter Integration
+
+## Status
+
+Completed and released in `v0.2.0`.
 
 ## Overview
 
-OpenRouter quota monitoring has been successfully added to pi-quotas. This document outlines what was implemented.
+OpenRouter quota monitoring has been added to pi-quotas for pay-as-you-go and budget-limited API keys.
 
-**Status**: ✅ Complete - All tests passing, type checking clean
+## What shipped
 
-## Implementation Summary
+### Provider support
+- Added `openrouter` to supported quota providers
+- Added fetch support for `GET https://openrouter.ai/api/v1/key`
+- Added parsing for OpenRouter key usage and optional budget limits
 
-### ✅ Files Modified
+### Commands and UI
+- Added `/openrouter:quotas`
+- Included OpenRouter in `/quotas`
+- Added footer status support for active OpenRouter sessions
+- Updated OpenRouter tracking windows to show:
+  - `Daily`
+  - `Weekly`
+  - `Monthly`
+- Currency values now display with cents precision throughout the UI
 
-| File | Changes |
-|------|---------|  
-| `src/types/quotas.ts` | Added `"openrouter"` to `SupportedQuotaProvider` |
-| `src/providers/providers.ts` | Added `parseOpenRouterUsage()` with helper date functions |
-| `src/providers/fetch.ts` | Added `fetchOpenRouterQuotasWithToken()` and `fetchOpenRouterQuotas()` |
-| `src/providers/fetch.ts` | Updated `PROVIDER_FETCHERS` registry |
-| `src/extensions/command-quotas/provider-commands.ts` | Added OpenRouter to command list |
-| `src/extensions/command-quotas/provider-commands.test.ts` | Added test for OpenRouter command |
-| `src/providers/parse.test.ts` | Added comprehensive tests for `parseOpenRouterUsage()` |
-| `src/lib/quotas.ts` | Added `openrouter` to `SUPPORTED_PROVIDERS`, `PROVIDER_LABELS`, `PROVIDER_TTLS_MS` |
-| `README.md` | Added OpenRouter to supported providers table and credentials section |
+### OpenRouter window behavior
+OpenRouter is credit-based, not subscription-quota-based.
 
-### ✅ Test Results
+Because of that, the usage windows are shown as tracking periods rather than traditional quota buckets:
+- **Monthly Budget** — shown only when a per-key spending limit is configured
+- **Credits Remaining** — shown when a remaining spend/balance value is available
+- **Daily / Weekly / Monthly** — tracking-only windows that show how much has been spent in each period
 
-- All 43 tests passing
-- Type checking clean (no errors)
+Tracking-only windows display as `$X.XX used` instead of `$X.XX / $0.00`.
 
-### ✅ Features Implemented
+### Time handling
+OpenRouter tracking periods now use UTC-based rollovers:
+- Daily → next UTC midnight
+- Weekly → next UTC Monday
+- Monthly → first day of the next UTC month
 
-1. **Quota Windows**:
-   - Monthly Budget (if spending limit is set)
-   - Credits Remaining (if unlimited key)
-   - Daily Usage (tracking only)
-   - Weekly Usage (tracking only)
-   - Monthly Usage (tracking only)
+## Verification
 
-2. **Command Support**:
-   - `/quotas` - Shows OpenRouter alongside other providers
-   - `/openrouter:quotas` - OpenRouter quotas only
+- Tests passing: `46`
+- Type checking: clean
+- npm package dry-run: verified
 
-3. **Footer Status**:
-   - Shows current OpenRouter quota headroom
-   - Updates every 60 seconds
+## User setup
 
-4. **Quota Warnings**:
-   - Triggers on monthly budget utilization
-   - Tracks usage pace
-
-### User Setup
-
-Users can use OpenRouter quotas by adding their API key:
+Add your OpenRouter API key to Pi auth:
 
 ```bash
 pi auth add openrouter <your-openrouter-api-key>
 ```
 
-Then run `/quotas` to see their quota status.
+Then use either:
+
+```bash
+/quotas
+```
+
+or:
+
+```bash
+/openrouter:quotas
+```
+
+## Related files
+
+- `src/types/quotas.ts`
+- `src/providers/providers.ts`
+- `src/providers/fetch.ts`
+- `src/lib/quotas.ts`
+- `src/extensions/command-quotas/provider-commands.ts`
+- `src/extensions/command-quotas/components/quotas-display.ts`
+- `src/extensions/usage-status/format-status.ts`
+- `README.md`
+- `CHANGELOG.md`
 
 ## References
 
-- [OpenRouter API Documentation - Limits](https://openrouter.ai/docs/api/reference/limits)
-- [OpenRouter API Documentation - Authentication](https://openrouter.ai/docs/api/reference/authentication)
-- [OpenRouter API - Get Current API Key](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-key)
+- [OpenRouter Pricing](https://openrouter.ai/pricing)
+- [OpenRouter FAQ](https://openrouter.ai/docs/faq)
+- [OpenRouter API Authentication](https://openrouter.ai/docs/api/reference/authentication)
+- [OpenRouter API Key Endpoint](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-key)

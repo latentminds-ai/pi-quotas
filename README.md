@@ -88,6 +88,10 @@ No additional setup is required - if Pi can use the provider, pi-quotas can chec
 
 - [Pi](https://github.com/mariozechner/pi) >= 0.61.0
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes and recent changes.
+
 ## License
 
 [MIT](LICENSE) © Latent Minds Pty Ltd
