@@ -89,6 +89,10 @@ No additional setup is required — if Pi can use the provider, pi-quotas can ch
 
 [MIT](LICENSE) © Latent Minds Pty Ltd
 
+## Acknowledgements
+
+This project was inspired by [@aliou/pi-synthetic](https://www.npmjs.com/package/@aliou/pi-synthetic).
+
 <p align="center">
   <img src="docs/latent-minds@2x.png" alt="Latent Minds" width="320" />
 </p>
