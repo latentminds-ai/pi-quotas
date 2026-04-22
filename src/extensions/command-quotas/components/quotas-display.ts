@@ -165,13 +165,21 @@ export class QuotasComponent implements Component {
         usedStr = `$${window.usedValue.toFixed(2)} / $${window.limitValue.toFixed(2)}`;
       } else if (window.limitValue <= 1 && window.label === "Spend cap") {
         usedStr = window.limited ? "REACHED" : "OK";
+      } else if (window.limitValue > 0 && window.limitValue !== 100) {
+        // Real counts: show remaining/total (e.g. "293/300")
+        const remaining = Math.max(0, Math.round(window.limitValue - window.usedValue));
+        usedStr = `${remaining}/${window.limitValue} left`;
       } else {
-        usedStr = `${Math.round(window.usedPercent)}%/${window.limitValue}`;
+        const remaining = Math.max(0, Math.min(100, Math.round(100 - window.usedPercent)));
+        usedStr = `${remaining}% left`;
       }
 
       const bar = renderProgressBar(window.usedPercent, barWidth, this.theme, color, assessment.pacePercent);
       const limitedBadge = window.limited ? this.theme.fg("error", " LIMITED") : "";
-      lines.push(truncateToWidth(`    ${this.theme.fg("dim", `${window.label}:`)}`, maxWidth));
+      // Color the label based on severity: dim when safe, colored when at risk
+      const isAtRisk = assessment.severity !== "none";
+      const labelColor = isAtRisk ? color : "dim";
+      lines.push(truncateToWidth(`    ${this.theme.fg(labelColor, `${window.label}:`)}`, maxWidth));
       lines.push(truncateToWidth(`    ${bar} ${this.theme.fg(color, usedStr)}${limitedBadge}`, maxWidth));
 
       // Subtitle: next event info + overage

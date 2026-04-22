@@ -16,56 +16,19 @@ import {
 } from "../../lib/quotas.js";
 import {
   assessWindow,
-  getSeverityColor,
-  type RiskSeverity,
 } from "../../utils/quotas-severity.js";
+import { formatWindowStatus, type WindowStatus } from "./format-status.js";
 
 const EXTENSION_ID = "pi-quotas-usage";
 const REFRESH_INTERVAL_MS = 60_000;
-
-type WindowStatus = {
-  label: string;
-  usedPercent: number;
-  severity: RiskSeverity;
-  resetsAt: string | null;
-  limited: boolean;
-  isCurrency?: boolean;
-  usedValue?: number;
-  limitValue?: number;
-};
-
-const SHORT_LABELS: Record<string, string> = {
-  "5h": "5h",
-  "7d": "7d",
-  "7d Sonnet": "7d-son",
-  "7d Opus": "7d-opus",
-  "Premium / month": "premium",
-  "Chat / month": "chat",
-  "Completions / month": "comp",
-  "Spend cap": "cap",
-  "Credits": "credits",
-};
 
 function formatStatus(ctx: ExtensionContext, windows: WindowStatus[]): string {
   const theme = ctx.ui.theme;
   return windows
     .map((w) => {
-      const short = SHORT_LABELS[w.label] ?? w.label;
-      const color = getSeverityColor(w.severity);
-
-      let valueText: string;
-      if (w.label === "Spend cap") {
-        valueText = theme.fg(color, w.limited ? "REACHED" : "OK");
-      } else if (w.isCurrency && w.usedValue != null && w.limitValue != null) {
-        valueText = theme.fg(color, `$${w.usedValue.toFixed(0)}/$${w.limitValue.toFixed(0)}`);
-      } else {
-        const remaining = Math.max(0, Math.min(100, Math.round(100 - w.usedPercent)));
-        valueText = theme.fg(color, `${remaining}%`);
-      }
-
+      const core = formatWindowStatus(theme, w);
       const reset = w.resetsAt ? theme.fg("dim", ` (↺${formatResetTime(w.resetsAt)})`) : "";
-      const limitTag = w.limited ? theme.fg("error", " [limited]") : "";
-      return `${theme.fg("dim", `${short}:`)}${valueText}${reset}${limitTag}`;
+      return `${core}${reset}`;
     })
     .join(" ");
 }
