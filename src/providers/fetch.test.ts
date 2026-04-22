@@ -81,7 +81,7 @@ describe("fetchCodexQuotasWithToken", () => {
 });
 
 describe("fetchGitHubCopilotQuotasWithToken", () => {
-  it("exchanges token then fetches usage", async () => {
+  it("exchanges token then fetches usage on happy path", async () => {
     globalThis.fetch = vi
       .fn()
       .mockResolvedValueOnce(
@@ -109,6 +109,29 @@ describe("fetchGitHubCopilotQuotasWithToken", () => {
       expect(result.data.provider).toBe("github-copilot");
       expect(result.data.windows).toHaveLength(1);
     }
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to direct token when exchange returns 401", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: "Bad credentials" }), { status: 401 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            quota_reset_date: "2026-05-01T00:00:00Z",
+            quota_snapshots: {
+              premium_interactions: { entitlement: 300, remaining: 293 },
+            },
+          }),
+          { status: 200 },
+        ),
+      ) as any;
+
+    const result = await fetchGitHubCopilotQuotasWithToken("gh-token");
+    expect(result.success).toBe(true);
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 });

@@ -47,6 +47,50 @@ export function parseAnthropicUsage(data: any): QuotaWindow[] {
     });
   }
 
+  // Per-model 7d windows
+  const modelWindows: Array<[string, string]> = [
+    ["seven_day_sonnet", "7d Sonnet"],
+    ["seven_day_omelette", "7d Opus"],
+    ["seven_day_opus", "7d Opus (legacy)"],
+  ];
+  for (const [key, label] of modelWindows) {
+    const entry = data?.[key];
+    if (entry && typeof entry === "object" && entry.utilization != null) {
+      windows.push({
+        provider: "anthropic",
+        label,
+        usedPercent: Number(entry.utilization),
+        resetsAt: parseDateish(entry.resets_at),
+        windowSeconds: 7 * 24 * 60 * 60,
+        usedValue: Number(entry.utilization),
+        limitValue: 100,
+        showPace: false,
+        nextLabel: "Resets",
+      });
+    }
+  }
+
+  // Extra usage (overage budget)
+  const extra = data?.extra_usage;
+  if (extra && extra.is_enabled && extra.monthly_limit > 0) {
+    const limitDollars = extra.monthly_limit / 100;
+    const usedDollars = (extra.used_credits ?? 0) / 100;
+    const currency = extra.currency ?? "USD";
+    windows.push({
+      provider: "anthropic",
+      label: `Extra (${currency})`,
+      usedPercent: Number(extra.utilization ?? safePercent(usedDollars, limitDollars)),
+      resetsAt: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1),
+      windowSeconds: 30 * 24 * 60 * 60,
+      usedValue: usedDollars,
+      limitValue: limitDollars,
+      isCurrency: true,
+      showPace: true,
+      paceScale: 1,
+      nextLabel: "Resets",
+    });
+  }
+
   return windows;
 }
 
@@ -92,6 +136,44 @@ export function parseCodexUsage(data: any): QuotaWindow[] {
     });
   }
 
+  // Credits balance
+  const credits = data?.credits;
+  if (credits && credits.has_credits && credits.balance != null) {
+    const balance = Number(credits.balance);
+    windows.push({
+      provider: "openai-codex",
+      label: "Credits",
+      usedPercent: 0,
+      resetsAt: new Date(0),
+      windowSeconds: 0,
+      usedValue: balance,
+      limitValue: balance,
+      isCurrency: true,
+      showPace: false,
+      nextLabel: credits.approx_local_messages
+        ? `~${credits.approx_local_messages} local msgs`
+        : undefined,
+    });
+  }
+
+  // Spend control
+  const spendControl = data?.spend_control;
+  if (spendControl) {
+    const reached = !!spendControl.reached;
+    windows.push({
+      provider: "openai-codex",
+      label: "Spend cap",
+      usedPercent: reached ? 100 : 0,
+      resetsAt: new Date(0),
+      windowSeconds: 0,
+      usedValue: reached ? 1 : 0,
+      limitValue: 1,
+      limited: reached,
+      showPace: false,
+      nextLabel: reached ? "Reached" : "OK",
+    });
+  }
+
   return windows;
 }
 
@@ -115,6 +197,8 @@ export function parseGitHubCopilotUsage(data: any): QuotaWindow[] {
       const entitlement = Number(snap.entitlement ?? 0);
       const remaining = Number(snap.remaining ?? snap.quota_remaining ?? 0);
       if (entitlement <= 0) continue;
+      const overageCount = Number(snap.overage_count ?? 0);
+      const overagePermitted = !!snap.overage_permitted;
       windows.push({
         provider: "github-copilot",
         label,
@@ -125,6 +209,11 @@ export function parseGitHubCopilotUsage(data: any): QuotaWindow[] {
         limitValue: entitlement,
         showPace: true,
         nextLabel: "Resets",
+        nextAmount: overageCount > 0
+          ? `+${overageCount} overage`
+          : overagePermitted
+            ? "overage allowed"
+            : undefined,
       });
     }
     return windows;

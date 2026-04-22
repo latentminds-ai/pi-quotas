@@ -29,14 +29,21 @@ type WindowStatus = {
   severity: RiskSeverity;
   resetsAt: string | null;
   limited: boolean;
+  isCurrency?: boolean;
+  usedValue?: number;
+  limitValue?: number;
 };
 
 const SHORT_LABELS: Record<string, string> = {
   "5h": "5h",
   "7d": "7d",
+  "7d Sonnet": "7d-son",
+  "7d Opus": "7d-opus",
   "Premium / month": "premium",
   "Chat / month": "chat",
   "Completions / month": "comp",
+  "Spend cap": "cap",
+  "Credits": "credits",
 };
 
 function formatStatus(ctx: ExtensionContext, windows: WindowStatus[]): string {
@@ -44,12 +51,21 @@ function formatStatus(ctx: ExtensionContext, windows: WindowStatus[]): string {
   return windows
     .map((w) => {
       const short = SHORT_LABELS[w.label] ?? w.label;
-      const remaining = Math.max(0, Math.min(100, Math.round(100 - w.usedPercent)));
       const color = getSeverityColor(w.severity);
-      const pctText = theme.fg(color, `${remaining}%`);
+
+      let valueText: string;
+      if (w.label === "Spend cap") {
+        valueText = theme.fg(color, w.limited ? "REACHED" : "OK");
+      } else if (w.isCurrency && w.usedValue != null && w.limitValue != null) {
+        valueText = theme.fg(color, `$${w.usedValue.toFixed(0)}/$${w.limitValue.toFixed(0)}`);
+      } else {
+        const remaining = Math.max(0, Math.min(100, Math.round(100 - w.usedPercent)));
+        valueText = theme.fg(color, `${remaining}%`);
+      }
+
       const reset = w.resetsAt ? theme.fg("dim", ` (↺${formatResetTime(w.resetsAt)})`) : "";
       const limitTag = w.limited ? theme.fg("error", " [limited]") : "";
-      return `${theme.fg("dim", `${short}:`)}${pctText}${reset}${limitTag}`;
+      return `${theme.fg("dim", `${short}:`)}${valueText}${reset}${limitTag}`;
     })
     .join(" ");
 }
@@ -75,12 +91,15 @@ function createStatusRefresher() {
         ctx.ui.setStatus(EXTENSION_ID, ctx.ui.theme.fg("warning", "usage unavailable"));
         return;
       }
-      const windows = result.data.windows.map((window) => ({
+      const windows: WindowStatus[] = result.data.windows.map((window) => ({
         label: window.label,
         usedPercent: window.usedPercent,
         severity: assessWindow(window).severity,
         resetsAt: window.resetsAt.toISOString(),
         limited: window.limited ?? false,
+        isCurrency: window.isCurrency,
+        usedValue: window.usedValue,
+        limitValue: window.limitValue,
       }));
       lastStatus = windows;
       ctx.ui.setStatus(EXTENSION_ID, formatStatus(ctx, windows));

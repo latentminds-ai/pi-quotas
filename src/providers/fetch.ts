@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -149,27 +150,64 @@ function copilotHeaders(authHeader: string): Record<string, string> {
   };
 }
 
+/**
+ * Try to get a token from `gh auth token` CLI as fallback when the Pi-stored
+ * OAuth token is stale or the token exchange returns 401.
+ */
+function ghCliToken(): string | undefined {
+  try {
+    return execFileSync("gh", ["auth", "token"], {
+      timeout: 5000,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function tryGitHubUserEndpoint(
+  authHeader: string,
+  signal?: AbortSignal,
+): Promise<FetchJsonResult> {
+  return fetchJson(
+    "https://api.github.com/copilot_internal/user",
+    { headers: copilotHeaders(authHeader) },
+    signal,
+  );
+}
+
 export async function fetchGitHubCopilotQuotasWithToken(
   accessToken: string | undefined,
   signal?: AbortSignal,
 ): Promise<QuotasResult> {
   if (!accessToken) return failure("No GitHub Copilot OAuth token found", "config");
 
+  // 1) Try Copilot token exchange with stored Pi token
   const exchange = await fetchJson(
     "https://api.github.com/copilot_internal/v2/token",
     { headers: copilotHeaders(`Bearer ${accessToken}`) },
     signal,
   );
 
-  const copilotToken = exchange.ok ? exchange.data?.token : undefined;
-  const usageAuth = copilotToken ? `Bearer ${copilotToken}` : `Bearer ${accessToken}`;
-  const usage = await fetchJson(
-    "https://api.github.com/copilot_internal/user",
-    { headers: copilotHeaders(usageAuth) },
-    signal,
-  );
-  if (!usage.ok) return failure(usage.message, usage.kind);
-  return success("github-copilot", parseGitHubCopilotUsage(usage.data));
+  if (exchange.ok && exchange.data?.token) {
+    const usage = await tryGitHubUserEndpoint(`Bearer ${exchange.data.token}`, signal);
+    if (usage.ok) return success("github-copilot", parseGitHubCopilotUsage(usage.data));
+  }
+
+  // 2) Try stored token directly
+  const directUsage = await tryGitHubUserEndpoint(`token ${accessToken}`, signal);
+  if (directUsage.ok) return success("github-copilot", parseGitHubCopilotUsage(directUsage.data));
+
+  // 3) Fallback: gh CLI token
+  const cliToken = ghCliToken();
+  if (cliToken && cliToken !== accessToken) {
+    const cliUsage = await tryGitHubUserEndpoint(`token ${cliToken}`, signal);
+    if (cliUsage.ok) return success("github-copilot", parseGitHubCopilotUsage(cliUsage.data));
+    return failure(cliUsage.message, cliUsage.kind);
+  }
+
+  return failure(directUsage.message, directUsage.kind);
 }
 
 export async function fetchAnthropicQuotas(

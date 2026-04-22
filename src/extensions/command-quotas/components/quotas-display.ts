@@ -158,16 +158,40 @@ export class QuotasComponent implements Component {
     for (const window of windows) {
       const assessment = assessWindow(window);
       const color = getSeverityColor(assessment.severity);
+
+      // Format the usage string depending on window type
+      let usedStr: string;
+      if (window.isCurrency) {
+        usedStr = `$${window.usedValue.toFixed(2)} / $${window.limitValue.toFixed(2)}`;
+      } else if (window.limitValue <= 1 && window.label === "Spend cap") {
+        usedStr = window.limited ? "REACHED" : "OK";
+      } else {
+        usedStr = `${Math.round(window.usedPercent)}%/${window.limitValue}`;
+      }
+
       const bar = renderProgressBar(window.usedPercent, barWidth, this.theme, color, assessment.pacePercent);
-      const usedStr = `${Math.round(window.usedPercent)}%/${window.limitValue}`;
+      const limitedBadge = window.limited ? this.theme.fg("error", " LIMITED") : "";
       lines.push(truncateToWidth(`    ${this.theme.fg("dim", `${window.label}:`)}`, maxWidth));
-      lines.push(truncateToWidth(`    ${bar} ${this.theme.fg(color, usedStr)}`, maxWidth));
-      lines.push(
-        truncateToWidth(
-          `    ${this.theme.fg("dim", `${window.nextLabel ?? "Resets"} in ${formatTimeRemaining(window.resetsAt)}`)}`,
-          maxWidth,
-        ),
-      );
+      lines.push(truncateToWidth(`    ${bar} ${this.theme.fg(color, usedStr)}${limitedBadge}`, maxWidth));
+
+      // Subtitle: next event info + overage
+      const subtitleParts: string[] = [];
+      if (window.resetsAt.getTime() > 0) {
+        subtitleParts.push(`${window.nextLabel ?? "Resets"} in ${formatTimeRemaining(window.resetsAt)}`);
+      } else if (window.nextLabel) {
+        subtitleParts.push(window.nextLabel);
+      }
+      if (window.nextAmount) {
+        subtitleParts.push(window.nextAmount);
+      }
+      if (subtitleParts.length > 0) {
+        lines.push(
+          truncateToWidth(
+            `    ${this.theme.fg("dim", subtitleParts.join("  ·  "))}`,
+            maxWidth,
+          ),
+        );
+      }
     }
 
     return lines;
