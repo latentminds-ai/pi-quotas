@@ -9,6 +9,7 @@ import {
   parseCodexUsage,
   parseGitHubCopilotUsage,
   parseOpenRouterUsage,
+  parseSyntheticUsage,
 } from "./providers.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
@@ -268,9 +269,28 @@ export async function fetchOpenRouterQuotas(
   );
 }
 
+export async function fetchSyntheticQuotas(
+  _authStorage: AuthStorage,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  const apiKey = process.env.SYNTHETIC_API_KEY;
+  if (!apiKey) return failure("No Synthetic API key found (set SYNTHETIC_API_KEY)", "config");
+
+  const result = await fetchJson(
+    "https://api.synthetic.new/v2/quotas",
+    {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    },
+    signal,
+  );
+  if (!result.ok) return failure(result.message, result.kind);
+  return success("synthetic", parseSyntheticUsage(result.data));
+}
+
 export const PROVIDER_FETCHERS = {
   anthropic: fetchAnthropicQuotas,
   "openai-codex": fetchCodexQuotas,
   "github-copilot": fetchGitHubCopilotQuotas,
   openrouter: fetchOpenRouterQuotas,
+  synthetic: fetchSyntheticQuotas,
 } as const;

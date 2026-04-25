@@ -34,5 +34,11 @@ export function getProviderCommandInfo(
         commandName: "openrouter:quotas",
         title: "OpenRouter Quotas",
       };
+    case "synthetic":
+      return {
+        provider,
+        commandName: "synthetic:quotas",
+        title: "Synthetic Quotas",
+      };
   }
 }
