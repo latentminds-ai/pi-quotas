@@ -352,3 +352,88 @@ export function parseOpenRouterUsage(data: any): QuotaWindow[] {
 
   return windows;
 }
+
+export function parseSyntheticUsage(data: any): QuotaWindow[] {
+  const windows: QuotaWindow[] = [];
+
+  // Subscription (requests)
+  if (data?.subscription) {
+    windows.push({
+      provider: "synthetic",
+      label: "Subscription",
+      usedPercent: safePercent(data.subscription.requests, data.subscription.limit),
+      resetsAt: parseDateish(data.subscription.renewsAt),
+      windowSeconds: 30 * 24 * 60 * 60,
+      usedValue: data.subscription.requests,
+      limitValue: data.subscription.limit,
+      showPace: true,
+      nextLabel: "Resets",
+    });
+  }
+
+  // Search hourly
+  if (data?.search?.hourly) {
+    windows.push({
+      provider: "synthetic",
+      label: "Search / hour",
+      usedPercent: safePercent(data.search.hourly.requests, data.search.hourly.limit),
+      resetsAt: parseDateish(data.search.hourly.renewsAt),
+      windowSeconds: 60 * 60,
+      usedValue: data.search.hourly.requests,
+      limitValue: data.search.hourly.limit,
+      showPace: false,
+      nextLabel: "Resets",
+    });
+  }
+
+  // Free tool calls
+  if (data?.freeToolCalls) {
+    windows.push({
+      provider: "synthetic",
+      label: "Free Tools",
+      usedPercent: safePercent(data.freeToolCalls.requests, data.freeToolCalls.limit),
+      resetsAt: parseDateish(data.freeToolCalls.renewsAt),
+      windowSeconds: 30 * 24 * 60 * 60,
+      usedValue: data.freeToolCalls.requests,
+      limitValue: data.freeToolCalls.limit,
+      showPace: true,
+      nextLabel: "Resets",
+    });
+  }
+
+  // Weekly token limit
+  if (data?.weeklyTokenLimit) {
+    const maxCredits = parseFloat(data.weeklyTokenLimit.maxCredits) || 0;
+    const remainingCredits = parseFloat(data.weeklyTokenLimit.remainingCredits) || 0;
+    windows.push({
+      provider: "synthetic",
+      label: "Weekly Tokens",
+      usedPercent: data.weeklyTokenLimit.percentRemaining ?? safePercent(remainingCredits, maxCredits),
+      resetsAt: parseDateish(data.weeklyTokenLimit.nextRegenAt),
+      windowSeconds: 7 * 24 * 60 * 60,
+      usedValue: maxCredits - remainingCredits,
+      limitValue: maxCredits,
+      isCurrency: true,
+      showPace: true,
+      nextLabel: "Regen",
+    });
+  }
+
+  // Rolling 5-hour limit
+  if (data?.rollingFiveHourLimit) {
+    windows.push({
+      provider: "synthetic",
+      label: "5h Limit",
+      usedPercent: data.rollingFiveHourLimit.tickPercent,
+      resetsAt: parseDateish(data.rollingFiveHourLimit.nextTickAt),
+      windowSeconds: 5 * 60 * 60,
+      usedValue: data.rollingFiveHourLimit.max - data.rollingFiveHourLimit.remaining,
+      limitValue: data.rollingFiveHourLimit.max,
+      limited: data.rollingFiveHourLimit.limited,
+      showPace: false,
+      nextLabel: data.rollingFiveHourLimit.limited ? "Limited" : "Resets",
+    });
+  }
+
+  return windows;
+}
