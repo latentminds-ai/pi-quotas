@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Synthetic quota monitoring support, including the `/synthetic:quotas` command.
+- Synthetic quota parsing for subscription requests, hourly search limits, free tool calls, weekly tokens, and rolling five-hour limits.
+- Synthetic API quota fetching via the `SYNTHETIC_API_KEY` environment variable.
+
 ## [0.2.0] - 2026-04-22
 
 ### Added
