@@ -1,6 +1,6 @@
 # @latentminds/pi-quotas
 
-Quota monitoring for the [Pi coding agent](https://github.com/mariozechner/pi). Shows remaining usage and rate limits for Anthropic, OpenAI Codex, GitHub Copilot, and OpenRouter — directly in your Pi session.
+Quota monitoring for the [Pi coding agent](https://github.com/mariozechner/pi). Shows remaining usage and rate limits for Anthropic, OpenAI Codex, GitHub Copilot, OpenRouter, and Synthetic — directly in your Pi session.
 
 ## Screenshots
 
@@ -38,6 +38,7 @@ pi -e npm:@latentminds/pi-quotas
 | `/codex:quotas` | OpenAI Codex quotas only |
 | `/github:quotas` | GitHub Copilot quotas only |
 | `/openrouter:quotas` | OpenRouter quotas only |
+| `/synthetic:quotas` | Synthetic quotas only |
 | `/quotas:settings` | Toggle individual features on or off |
 
 ## Features
@@ -58,7 +59,7 @@ Automatic notifications when projected usage is on track to exceed limits before
 
 Use `/quotas:settings` to enable or disable:
 - Combined `/quotas` command
-- Per-provider commands (`/anthropic:quotas`, `/codex:quotas`, `/github:quotas`, `/openrouter:quotas`)
+- Per-provider commands (`/anthropic:quotas`, `/codex:quotas`, `/github:quotas`, `/openrouter:quotas`, `/synthetic:quotas`)
 - Footer status widget
 - Quota warning notifications
 
@@ -72,6 +73,7 @@ Settings can be saved globally (`~/.pi/agent/extensions/quotas.json`) or per-pro
 | OpenAI Codex | 5h, 7d, credits, spend cap | Rate-limit percentages; credit balance; spend-cap reached/OK |
 | GitHub Copilot | Premium/chat/completions per month | Remaining/entitlement counts with overage indicators |
 | OpenRouter | Monthly budget, daily/weekly/monthly usage | USD spending tracking with cents precision; optional per-key budget limits; UTC-based period resets |
+| Synthetic | Subscription, search/hour, free tools, weekly tokens, 5h limit | Request counts and token budgets; rolling five-hour rate limit; weekly token regen |
 
 ## Credentials
 
@@ -81,8 +83,9 @@ pi-quotas reads existing Pi auth entries from `~/.pi/agent/auth.json`:
 - `openai-codex` — Codex access token (also reads `~/.codex/auth.json` for the account ID)
 - `github-copilot` — GitHub Copilot OAuth token (falls back to `gh auth token` if needed)
 - `openrouter` — OpenRouter API key (Bearer token)
+- `synthetic` — Synthetic API key (set the `SYNTHETIC_API_KEY` environment variable)
 
-No additional setup is required - if Pi can use the provider, pi-quotas can check its quotas.
+No additional setup is required - if Pi can use the provider, pi-quotas can check its quotas. For Synthetic, export `SYNTHETIC_API_KEY` in your shell or Pi environment.
 
 ## Requirements
 

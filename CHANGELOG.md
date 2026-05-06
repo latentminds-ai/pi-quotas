@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Anthropic subscription quota windows are hidden from the footer status line while remaining available in quota dashboards and warnings.
+- README updated with Synthetic provider commands, quota windows, and credential setup.
 
 ## [0.2.1] - 2026-05-06
 
