@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatWindowStatus, type WindowStatus } from "./format-status.js";
 import type { SupportedQuotaProvider } from "../../types/quotas.js";
-import { formatStatus, toWindowStatus } from "./index.js";
+import { formatStatus, formatStatusForFooter, toStatusWindows, toWindowStatus } from "./index.js";
 
 // Minimal fake theme that just returns text with markers for color assertions
 function fakeTheme() {
@@ -181,6 +181,46 @@ describe("formatWindowStatus", () => {
 
       expect(status.resetsAt).toBeNull();
     }
+  });
+
+  it("clears the footer status when filtering removes all windows", () => {
+    expect(formatStatusForFooter({ ui: { theme } } as any, [])).toBeUndefined();
+  });
+
+  it("filters Anthropic subscription windows from footer status while keeping extra usage", () => {
+    const windows = toStatusWindows([
+      {
+        provider: "anthropic",
+        label: "5h",
+        usedPercent: 10,
+        resetsAt: new Date("2026-05-06T07:47:37Z"),
+        windowSeconds: 5 * 60 * 60,
+        usedValue: 10,
+        limitValue: 100,
+      },
+      {
+        provider: "anthropic",
+        label: "7d Sonnet",
+        usedPercent: 20,
+        resetsAt: new Date("2026-05-06T07:47:37Z"),
+        windowSeconds: 7 * 24 * 60 * 60,
+        usedValue: 20,
+        limitValue: 100,
+      },
+      {
+        provider: "anthropic",
+        label: "Extra (USD)",
+        usedPercent: 30,
+        resetsAt: new Date("2026-06-01T00:00:00Z"),
+        windowSeconds: 30 * 24 * 60 * 60,
+        usedValue: 30,
+        limitValue: 100,
+        isCurrency: true,
+      },
+    ]);
+
+    expect(windows).toHaveLength(1);
+    expect(windows[0]).toMatchObject({ label: "Extra (USD)" });
   });
 
   it("does not prefix elapsed reset times with in", () => {

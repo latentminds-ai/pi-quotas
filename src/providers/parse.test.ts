@@ -48,6 +48,8 @@ describe("parseAnthropicUsage", () => {
     const extra = windows.find((w) => w.label === "Extra (AUD)");
     expect(extra).toBeDefined();
     expect(extra).toMatchObject({
+      provider: "anthropic",
+      label: "Extra (AUD)",
       isCurrency: true,
       usedPercent: 71.83,
       usedValue: 215.48,

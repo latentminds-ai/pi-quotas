@@ -39,6 +39,21 @@ export function formatStatus(ctx: Pick<ExtensionContext, "ui">, windows: WindowS
     .join(" ");
 }
 
+const ANTHROPIC_SUBSCRIPTION_WINDOW_LABELS = new Set([
+  "5h",
+  "7d",
+  "7d Sonnet",
+  "7d Opus",
+  "7d Opus (legacy)",
+]);
+
+function shouldShowInStatus(window: QuotaWindow): boolean {
+  return !(
+    window.provider === "anthropic" &&
+    ANTHROPIC_SUBSCRIPTION_WINDOW_LABELS.has(window.label)
+  );
+}
+
 export function toWindowStatus(window: QuotaWindow): WindowStatus {
   return {
     label: window.label,
@@ -50,6 +65,18 @@ export function toWindowStatus(window: QuotaWindow): WindowStatus {
     usedValue: window.usedValue,
     limitValue: window.limitValue,
   };
+}
+
+export function toStatusWindows(windows: QuotaWindow[]): WindowStatus[] {
+  return windows.filter(shouldShowInStatus).map(toWindowStatus);
+}
+
+export function formatStatusForFooter(
+  ctx: Pick<ExtensionContext, "ui">,
+  windows: WindowStatus[],
+): string | undefined {
+  if (windows.length === 0) return undefined;
+  return formatStatus(ctx, windows);
 }
 
 function createStatusRefresher() {
@@ -73,9 +100,10 @@ function createStatusRefresher() {
         ctx.ui.setStatus(EXTENSION_ID, ctx.ui.theme.fg("warning", "usage unavailable"));
         return;
       }
-      const windows: WindowStatus[] = result.data.windows.map(toWindowStatus);
-      lastStatus = windows;
-      ctx.ui.setStatus(EXTENSION_ID, formatStatus(ctx, windows));
+      const windows: WindowStatus[] = toStatusWindows(result.data.windows);
+      const status = formatStatusForFooter(ctx, windows);
+      lastStatus = status === undefined ? undefined : windows;
+      ctx.ui.setStatus(EXTENSION_ID, status);
     } catch {
       ctx.ui.setStatus(EXTENSION_ID, ctx.ui.theme.fg("warning", "usage unavailable"));
     } finally {
@@ -114,7 +142,7 @@ function createStatusRefresher() {
     },
     renderLast(ctx: ExtensionContext): boolean {
       if (!lastStatus || !ctx.hasUI) return false;
-      ctx.ui.setStatus(EXTENSION_ID, formatStatus(ctx, lastStatus));
+      ctx.ui.setStatus(EXTENSION_ID, formatStatusForFooter(ctx, lastStatus));
       return true;
     },
   };

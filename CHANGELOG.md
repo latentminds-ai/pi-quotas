@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Footer reset times now use minute precision across supported providers, matching quota warning output.
 - Footer status no longer shows misleading reset tags for non-reset windows such as Codex spend cap and credit balances.
+- Anthropic subscription quota windows are hidden from the footer status line while remaining available in quota dashboards and warnings.
 - Elapsed reset times render as `now` instead of `in now`.
 
 ## [0.2.0] - 2026-04-22
