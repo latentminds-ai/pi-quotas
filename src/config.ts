@@ -9,7 +9,8 @@ export type QuotasFeatureId =
   | "quotasCommand"
   | "providerCommands"
   | "usageStatus"
-  | "quotaWarnings";
+  | "quotaWarnings"
+  | "deferToSynthetic";
 
 export const QUOTAS_EXTENSIONS_REQUEST_EVENT =
   "quotas:extensions:request" as const;
@@ -28,6 +29,8 @@ export interface QuotasConfig {
   providerCommands?: boolean;
   usageStatus?: boolean;
   quotaWarnings?: boolean;
+  /** When true and pi-synthetic's usage footer is active, hide pi-quotas' Synthetic footer. */
+  deferToSynthetic?: boolean;
 }
 
 export interface ResolvedQuotasConfig {
@@ -36,6 +39,7 @@ export interface ResolvedQuotasConfig {
   providerCommands: boolean;
   usageStatus: boolean;
   quotaWarnings: boolean;
+  deferToSynthetic: boolean;
 }
 
 const DEFAULT_CONFIG: ResolvedQuotasConfig = {
@@ -44,6 +48,7 @@ const DEFAULT_CONFIG: ResolvedQuotasConfig = {
   providerCommands: true,
   usageStatus: true,
   quotaWarnings: true,
+  deferToSynthetic: true,
 };
 
 let pendingMigrationNotice = false;
@@ -79,6 +84,7 @@ class QuotasConfigStore {
       providerCommands: input?.providerCommands ?? DEFAULT_CONFIG.providerCommands,
       usageStatus: input?.usageStatus ?? DEFAULT_CONFIG.usageStatus,
       quotaWarnings: input?.quotaWarnings ?? DEFAULT_CONFIG.quotaWarnings,
+      deferToSynthetic: input?.deferToSynthetic ?? DEFAULT_CONFIG.deferToSynthetic,
     };
   }
 
@@ -164,6 +170,11 @@ const FEATURE_META: Array<{
     label: "Quota warnings",
     description: "Toggle projected-usage warning notifications",
   },
+  {
+    id: "deferToSynthetic",
+    label: "Defer to Synthetic",
+    description: "When pi-synthetic is loaded, hide pi-quotas' Synthetic footer to avoid duplicates",
+  },
 ];
 
 export function registerQuotasSettings(
@@ -205,11 +216,11 @@ export function registerQuotasSettings(
 
         const feature = FEATURE_META.find((item) => selected.startsWith(item.label));
         if (!feature) continue;
-        if (!getLoadedFeatures().has(feature.id)) {
+        if (feature.id !== "deferToSynthetic" && !getLoadedFeatures().has(feature.id)) {
           ctx.ui.notify(`${feature.label} is not loaded by Pi in this session.`, "warning");
           continue;
         }
-        draft[feature.id] = !draft[feature.id];
+        (draft as unknown as Record<string, boolean>)[feature.id] = !(draft as unknown as Record<string, boolean>)[feature.id];
       }
     },
   });

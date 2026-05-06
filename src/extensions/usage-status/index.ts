@@ -9,6 +9,12 @@ import {
   type QuotasConfigUpdatedPayload,
   configLoader,
 } from "../../config.js";
+
+/** Event emitted by pi-synthetic when its usage-status extension registers. */
+const SYNTHETIC_EXTENSIONS_REGISTER_EVENT = "synthetic:extensions:register";
+interface SyntheticExtensionsRegisterPayload {
+  feature: string;
+}
 import {
   fetchProviderQuotas,
   isSupportedProvider,
@@ -152,10 +158,28 @@ export default async function (pi: ExtensionAPI) {
   await configLoader.load();
   const refresher = createStatusRefresher();
   let enabled = configLoader.getConfig().usageStatus;
+  let deferToSynthetic = configLoader.getConfig().deferToSynthetic;
   let currentContext: ExtensionContext | undefined;
 
+  /** Whether pi-synthetic's usage footer is active in this session. */
+  let syntheticUsageActive = false;
+
+  pi.events.on(SYNTHETIC_EXTENSIONS_REGISTER_EVENT, (data: unknown) => {
+    const { feature } = data as SyntheticExtensionsRegisterPayload;
+    if (feature === "usageStatus") {
+      syntheticUsageActive = true;
+      // If currently showing synthetic data, clear our footer
+      if (currentContext && enabled && deferToSynthetic && currentContext.model?.provider === "synthetic") {
+        currentContext.ui.setStatus(EXTENSION_ID, undefined);
+        refresher.stop();
+      }
+    }
+  });
+
   pi.events.on(QUOTAS_CONFIG_UPDATED_EVENT, (data: unknown) => {
-    enabled = (data as QuotasConfigUpdatedPayload).config.usageStatus;
+    const config = (data as QuotasConfigUpdatedPayload).config;
+    enabled = config.usageStatus;
+    deferToSynthetic = config.deferToSynthetic;
     if (!enabled) {
       refresher.stop(currentContext);
       return;
@@ -166,9 +190,21 @@ export default async function (pi: ExtensionAPI) {
     }
   });
 
+  /**
+   * Whether to suppress our footer because pi-synthetic is showing
+   * the same data for the Synthetic provider.
+   */
+  function shouldDeferToSynthetic(provider: string | undefined): boolean {
+    return deferToSynthetic && syntheticUsageActive && provider === "synthetic";
+  }
+
   pi.on("session_start", async (_event, ctx) => {
     currentContext = ctx;
     if (!enabled) return;
+    if (shouldDeferToSynthetic(ctx.model?.provider)) {
+      ctx.ui.setStatus(EXTENSION_ID, undefined);
+      return;
+    }
     refresher.start();
     await refresher.refreshFor(ctx);
   });
@@ -176,6 +212,7 @@ export default async function (pi: ExtensionAPI) {
   pi.on("turn_end", async (_event, ctx) => {
     currentContext = ctx;
     if (!enabled) return;
+    if (shouldDeferToSynthetic(ctx.model?.provider)) return;
     await refresher.refreshFor(ctx);
   });
 
@@ -185,11 +222,16 @@ export default async function (pi: ExtensionAPI) {
       refresher.stop(ctx);
       return;
     }
+    if (shouldDeferToSynthetic(ctx.model?.provider)) {
+      ctx.ui.setStatus(EXTENSION_ID, undefined);
+      return;
+    }
     await refresher.refreshFor(ctx);
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
     currentContext = undefined;
+    syntheticUsageActive = false;
     refresher.stop(ctx);
   });
 

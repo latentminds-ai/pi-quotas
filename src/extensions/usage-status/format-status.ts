@@ -37,6 +37,11 @@ const SHORT_LABELS: Record<string, string> = {
   "Daily": "daily",
   "Weekly": "weekly",
   "Monthly": "monthly",
+  // Synthetic labels (match pi-synthetic extension)
+  "Credits / week": "week",
+  "Requests / 5h": "5h",
+  "Search / hour": "search",
+  "Free Tool Calls / day": "tools",
 };
 
 /**
@@ -68,8 +73,19 @@ export function formatWindowStatus(theme: ThemeLike, w: WindowStatus): string {
   const labelColor = isAtRisk ? color : "dim";
   const labelText = theme.fg(labelColor, `${short}:`);
 
+  // Synthetic windows always use compact "remaining%" format
+  // to match the pi-synthetic extension display
+  const SYNTHETIC_LABELS = new Set([
+    "Credits / week", "Requests / 5h", "Search / hour", "Free Tool Calls / day",
+  ]);
+  const isSynthetic = SYNTHETIC_LABELS.has(w.label);
+
   let valueText: string;
-  if (w.label === "Spend cap") {
+  if (isSynthetic) {
+    // Compact format matching pi-synthetic: just remaining%
+    const remaining = Math.max(0, Math.min(100, Math.round(100 - w.usedPercent)));
+    valueText = theme.fg(color, `${remaining}%`);
+  } else if (w.label === "Spend cap") {
     valueText = theme.fg(color, w.limited ? "REACHED" : "OK");
   } else if (w.isCurrency && w.usedValue != null && w.limitValue != null) {
     // Tracking-only windows have limitValue=0, show just usage

@@ -3,6 +3,7 @@ import { parseAnthropicUsage } from "./providers.js";
 import { parseCodexUsage } from "./providers.js";
 import { parseGitHubCopilotUsage } from "./providers.js";
 import { parseOpenRouterUsage } from "./providers.js";
+import { parseSyntheticUsage } from "./providers.js";
 
 describe("parseAnthropicUsage", () => {
   it("maps oauth usage response into quota windows", () => {
@@ -408,5 +409,135 @@ describe("parseOpenRouterUsage", () => {
     expect(windows.find((w) => w.label === "Daily")).toBeDefined();
     expect(windows.find((w) => w.label === "Weekly")).toBeDefined();
     expect(windows.find((w) => w.label === "Monthly")).toBeDefined();
+  });
+});
+
+describe("parseSyntheticUsage", () => {
+  it("parses a full API response with all windows", () => {
+    const windows = parseSyntheticUsage({
+      subscription: {
+        limit: 500,
+        requests: 0,
+        renewsAt: "2026-05-06T12:27:17.097Z",
+      },
+      search: {
+        hourly: {
+          limit: 250,
+          requests: 30,
+          renewsAt: "2026-05-06T08:27:17.097Z",
+        },
+      },
+      freeToolCalls: {
+        limit: 0,
+        requests: 0,
+        renewsAt: "2026-05-07T07:27:17.102Z",
+      },
+      weeklyTokenLimit: {
+        nextRegenAt: "2026-05-06T09:44:14.000Z",
+        percentRemaining: 96.39,
+        maxCredits: "$24.00",
+        remainingCredits: "$23.13",
+        nextRegenCredits: "$0.48",
+      },
+      rollingFiveHourLimit: {
+        nextTickAt: "2026-05-06T07:27:51.000Z",
+        tickPercent: 0.05,
+        remaining: 420,
+        max: 500,
+        limited: false,
+      },
+    });
+
+    // subscription is NOT a window (matching pi-synthetic extension)
+    expect(windows.find((w) => w.label === "Subscription")).toBeUndefined();
+
+    // weeklyTokenLimit: 100 - 96.39 = ~3.61%
+    const credits = windows.find((w) => w.label === "Credits / week");
+    expect(credits).toBeDefined();
+    expect(credits!.usedPercent).toBeCloseTo(3.61, 1);
+    expect(credits!.isCurrency).toBe(true);
+    expect(credits!.limitValue).toBe(24);
+    expect(credits!.usedValue).toBeCloseTo(0.87, 1);
+    expect(credits!.paceScale).toBe(1 / 7);
+    expect(credits!.nextAmount).toBe("+$0.48");
+
+    // rollingFiveHourLimit: (500-420)/500 = 16%
+    const fiveHour = windows.find((w) => w.label === "Requests / 5h");
+    expect(fiveHour).toBeDefined();
+    expect(fiveHour!.usedPercent).toBe(16);
+    expect(fiveHour!.usedValue).toBe(80);
+    expect(fiveHour!.limitValue).toBe(500);
+    expect(fiveHour!.limited).toBe(false);
+
+    // search hourly
+    const search = windows.find((w) => w.label === "Search / hour");
+    expect(search).toBeDefined();
+    expect(search!.usedPercent).toBeCloseTo(12, 0);
+    expect(search!.usedValue).toBe(30);
+    expect(search!.limitValue).toBe(250);
+
+    // freeToolCalls with limit=0 is NOT shown
+    expect(windows.find((w) => w.label === "Free Tool Calls / day")).toBeUndefined();
+  });
+
+  it("shows freeToolCalls when limit > 0", () => {
+    const windows = parseSyntheticUsage({
+      weeklyTokenLimit: {
+        nextRegenAt: "2026-05-06T09:44:14.000Z",
+        percentRemaining: 50,
+        maxCredits: "$10.00",
+        remainingCredits: "$5.00",
+        nextRegenCredits: "$0.50",
+      },
+      freeToolCalls: {
+        limit: 100,
+        requests: 25,
+        renewsAt: "2026-05-07T07:27:17.102Z",
+      },
+    });
+
+    const tools = windows.find((w) => w.label === "Free Tool Calls / day");
+    expect(tools).toBeDefined();
+    expect(tools!.usedPercent).toBe(25);
+  });
+
+  it("parses currency strings like $24.00 correctly", () => {
+    const windows = parseSyntheticUsage({
+      weeklyTokenLimit: {
+        nextRegenAt: "2026-05-06T09:44:14.000Z",
+        percentRemaining: 75,
+        maxCredits: "$1,234.56",
+        remainingCredits: "$925.92",
+        nextRegenCredits: "$12.34",
+      },
+    });
+
+    const credits = windows.find((w) => w.label === "Credits / week");
+    expect(credits).toBeDefined();
+    expect(credits!.limitValue).toBe(1234.56);
+    expect(credits!.usedValue).toBeCloseTo(308.64, 1);
+    expect(credits!.usedPercent).toBe(25); // 100 - 75
+  });
+
+  it("handles limited state", () => {
+    const windows = parseSyntheticUsage({
+      rollingFiveHourLimit: {
+        nextTickAt: "2026-05-06T07:27:51.000Z",
+        tickPercent: 100,
+        remaining: 0,
+        max: 500,
+        limited: true,
+      },
+    });
+
+    const fiveHour = windows.find((w) => w.label === "Requests / 5h");
+    expect(fiveHour).toBeDefined();
+    expect(fiveHour!.usedPercent).toBe(100);
+    expect(fiveHour!.limited).toBe(true);
+  });
+
+  it("returns empty array when no data", () => {
+    const windows = parseSyntheticUsage({});
+    expect(windows).toHaveLength(0);
   });
 });

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.4] - 2026-05-06
+
+### Added
+- **Defer to Synthetic**: When pi-synthetic's usage footer is active, pi-quotas now hides its own Synthetic footer to avoid duplicate quota displays. This behavior is enabled by default and can be toggled via `/quotas:settings` → "Defer to Synthetic".
+
+## [0.2.3] - 2026-05-06
+
+### Changed
+- Version bump only.
+
 ## [0.2.2] - 2026-05-06
 
 ### Fixed
