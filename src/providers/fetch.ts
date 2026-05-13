@@ -179,6 +179,32 @@ async function tryGitHubUserEndpoint(
   );
 }
 
+function githubOAuthToken(authStorage: AuthStorage): string | undefined {
+  // Pi's GitHub Copilot OAuth credential stores the GitHub OAuth token in
+  // `refresh`; `access` is a Copilot proxy token (tid=...;proxy-ep=...) that
+  // is valid for model calls but rejected by api.github.com quota endpoints.
+  const credential = authStorage.get("github-copilot") as any;
+  if (credential?.type !== "oauth") return undefined;
+  return typeof credential.refresh === "string" && credential.refresh.length > 0
+    ? credential.refresh
+    : undefined;
+}
+
+async function fetchGitHubCopilotQuotasWithGitHubToken(
+  githubToken: string | undefined,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  if (!githubToken) return failure("No GitHub Copilot OAuth token found", "config");
+
+  const bearerUsage = await tryGitHubUserEndpoint(`Bearer ${githubToken}`, signal);
+  if (bearerUsage.ok) return success("github-copilot", parseGitHubCopilotUsage(bearerUsage.data));
+
+  const tokenUsage = await tryGitHubUserEndpoint(`token ${githubToken}`, signal);
+  if (tokenUsage.ok) return success("github-copilot", parseGitHubCopilotUsage(tokenUsage.data));
+
+  return failure(bearerUsage.message, bearerUsage.kind);
+}
+
 export async function fetchGitHubCopilotQuotasWithToken(
   accessToken: string | undefined,
   signal?: AbortSignal,
@@ -234,6 +260,18 @@ export async function fetchGitHubCopilotQuotas(
   authStorage: AuthStorage,
   signal?: AbortSignal,
 ): Promise<QuotasResult> {
+  const oauthResult = await fetchGitHubCopilotQuotasWithGitHubToken(
+    githubOAuthToken(authStorage),
+    signal,
+  );
+  if (
+    oauthResult.success ||
+    oauthResult.error.kind === "cancelled" ||
+    oauthResult.error.kind === "timeout"
+  ) {
+    return oauthResult;
+  }
+
   return fetchGitHubCopilotQuotasWithToken(
     await providerAccessToken(authStorage, "github-copilot"),
     signal,

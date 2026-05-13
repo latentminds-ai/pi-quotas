@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Pi startup and turn handling no longer wait for footer quota refreshes or quota warning checks; remote quota requests now run in the background.
+- GitHub Copilot quota checks now use Pi's stored GitHub OAuth token for the `/copilot_internal/user` endpoint, fixing `401 Bad credentials` failures with Pi 0.74 auth credentials. Reported by @6aKa in #8.
 
 ## [0.2.4] - 2026-05-06
 
