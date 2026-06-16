@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- Usage status footer refreshes no longer crash Pi after session reload or replacement when an interval or queued refresh sees a stale extension context.
+
 ## [0.2.6] - 2026-05-14
 
 ### Added

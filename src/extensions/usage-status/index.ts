@@ -28,6 +28,61 @@ import { formatWindowStatus, type WindowStatus } from "./format-status.js";
 
 const EXTENSION_ID = "pi-quotas-usage";
 const REFRESH_INTERVAL_MS = 60_000;
+const STALE_CONTEXT_ERROR_FRAGMENT = "This extension ctx is stale";
+
+function unrefTimer(timer: ReturnType<typeof setInterval>): void {
+  if (typeof timer === "object" && "unref" in timer) {
+    (timer as { unref?: () => void }).unref?.();
+  }
+}
+
+function isStaleExtensionContextError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes(STALE_CONTEXT_ERROR_FRAGMENT);
+}
+
+function readContextProvider(ctx: ExtensionContext):
+  | { stale: false; provider: string | undefined }
+  | { stale: true } {
+  try {
+    return { stale: false, provider: ctx.model?.provider };
+  } catch (error) {
+    if (isStaleExtensionContextError(error)) return { stale: true };
+    throw error;
+  }
+}
+
+function clearFooterStatus(ctx: ExtensionContext | undefined): boolean {
+  if (!ctx) return true;
+  try {
+    ctx.ui.setStatus(EXTENSION_ID, undefined);
+    return true;
+  } catch (error) {
+    if (isStaleExtensionContextError(error)) return false;
+    throw error;
+  }
+}
+
+function setUnavailableStatus(ctx: ExtensionContext): boolean {
+  try {
+    if (ctx.hasUI) {
+      ctx.ui.setStatus(EXTENSION_ID, ctx.ui.theme.fg("warning", "usage unavailable"));
+    }
+    return true;
+  } catch (error) {
+    if (isStaleExtensionContextError(error)) return false;
+    throw error;
+  }
+}
+
+function setFooterStatus(ctx: ExtensionContext, status: string | undefined): boolean {
+  try {
+    ctx.ui.setStatus(EXTENSION_ID, status);
+    return true;
+  } catch (error) {
+    if (isStaleExtensionContextError(error)) return false;
+    throw error;
+  }
+}
 
 function formatFooterResetTime(resetsAt: string): string {
   const remaining = formatTimeRemaining(new Date(resetsAt));
@@ -85,71 +140,127 @@ export function formatStatusForFooter(
   return formatStatus(ctx, windows);
 }
 
-function createStatusRefresher() {
+export function createStatusRefresher() {
   let refreshTimer: ReturnType<typeof setInterval> | undefined;
   let activeContext: ExtensionContext | undefined;
   let activeProvider: string | undefined;
   let lastStatus: WindowStatus[] | undefined;
   let inFlight = false;
   let queued = false;
+  let refreshVersion = 0;
 
-  async function update(ctx: ExtensionContext): Promise<void> {
-    if (!ctx.hasUI || !activeProvider || !isSupportedProvider(activeProvider)) return;
+  function deactivate(): void {
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = undefined;
+    activeContext = undefined;
+    activeProvider = undefined;
+    lastStatus = undefined;
+    queued = false;
+    refreshVersion += 1;
+  }
+
+  function isCurrent(ctx: ExtensionContext, version: number): boolean {
+    return activeContext === ctx && refreshVersion === version;
+  }
+
+  async function update(ctx: ExtensionContext, version: number): Promise<void> {
     if (inFlight) {
       queued = true;
       return;
     }
+
     inFlight = true;
     try {
-      const result = await fetchProviderQuotas(ctx.modelRegistry.authStorage, activeProvider);
+      const provider = activeProvider;
+      if (!isCurrent(ctx, version) || !provider || !isSupportedProvider(provider)) return;
+      if (!ctx.hasUI) return;
+
+      const result = await fetchProviderQuotas(ctx.modelRegistry.authStorage, provider);
+      if (!isCurrent(ctx, version)) return;
+
       if (!result.success) {
-        ctx.ui.setStatus(EXTENSION_ID, ctx.ui.theme.fg("warning", "usage unavailable"));
+        if (!setUnavailableStatus(ctx)) deactivate();
         return;
       }
+
       const windows: WindowStatus[] = toStatusWindows(result.data.windows);
       const status = formatStatusForFooter(ctx, windows);
+      if (!isCurrent(ctx, version)) return;
+
       lastStatus = status === undefined ? undefined : windows;
-      ctx.ui.setStatus(EXTENSION_ID, status);
-    } catch {
-      ctx.ui.setStatus(EXTENSION_ID, ctx.ui.theme.fg("warning", "usage unavailable"));
+      if (!setFooterStatus(ctx, status)) deactivate();
+    } catch (error) {
+      if (isStaleExtensionContextError(error)) {
+        deactivate();
+        return;
+      }
+      if (!setUnavailableStatus(ctx)) deactivate();
     } finally {
       inFlight = false;
       if (queued) {
         queued = false;
-        void update(ctx);
+        const nextContext = activeContext;
+        if (nextContext) void update(nextContext, refreshVersion);
       }
     }
   }
 
   return {
     async refreshFor(ctx: ExtensionContext): Promise<void> {
-      activeContext = ctx;
-      activeProvider = ctx.model?.provider;
-      if (!activeProvider || !isSupportedProvider(activeProvider)) {
-        ctx.ui.setStatus(EXTENSION_ID, undefined);
+      const provider = readContextProvider(ctx);
+      if (provider.stale) {
+        deactivate();
         return;
       }
-      await update(ctx);
+
+      activeContext = ctx;
+      activeProvider = provider.provider;
+      const version = refreshVersion + 1;
+      refreshVersion = version;
+
+      if (!activeProvider || !isSupportedProvider(activeProvider)) {
+        clearFooterStatus(ctx);
+        return;
+      }
+
+      await update(ctx, version);
     },
     start(): void {
       if (refreshTimer) clearInterval(refreshTimer);
       refreshTimer = setInterval(() => {
-        if (activeContext) void update(activeContext);
+        const ctx = activeContext;
+        if (!ctx) return;
+        void update(ctx, refreshVersion).catch((error: unknown) => {
+          if (isStaleExtensionContextError(error)) {
+            deactivate();
+            return;
+          }
+          if (!setUnavailableStatus(ctx)) deactivate();
+        });
       }, REFRESH_INTERVAL_MS);
-      refreshTimer.unref?.();
+      unrefTimer(refreshTimer);
     },
     stop(ctx?: ExtensionContext): void {
-      if (refreshTimer) clearInterval(refreshTimer);
-      refreshTimer = undefined;
-      activeContext = undefined;
-      activeProvider = undefined;
-      lastStatus = undefined;
-      ctx?.ui.setStatus(EXTENSION_ID, undefined);
+      deactivate();
+      clearFooterStatus(ctx);
     },
     renderLast(ctx: ExtensionContext): boolean {
-      if (!lastStatus || !ctx.hasUI) return false;
-      ctx.ui.setStatus(EXTENSION_ID, formatStatusForFooter(ctx, lastStatus));
-      return true;
+      if (!lastStatus) return false;
+      try {
+        if (!ctx.hasUI) return false;
+        const status = formatStatusForFooter(ctx, lastStatus);
+        if (!setFooterStatus(ctx, status)) {
+          deactivate();
+          return false;
+        }
+        return true;
+      } catch (error) {
+        if (isStaleExtensionContextError(error)) {
+          deactivate();
+          return false;
+        }
+        throw error;
+      }
     },
   };
 }
@@ -157,6 +268,7 @@ function createStatusRefresher() {
 export default async function (pi: ExtensionAPI) {
   await configLoader.load();
   const refresher = createStatusRefresher();
+  const unsubscribeEventHandlers: Array<() => void> = [];
   let enabled = configLoader.getConfig().usageStatus;
   let deferToSynthetic = configLoader.getConfig().deferToSynthetic;
   let currentContext: ExtensionContext | undefined;
@@ -164,25 +276,39 @@ export default async function (pi: ExtensionAPI) {
   /** Whether pi-synthetic's usage footer is active in this session. */
   let syntheticUsageActive = false;
 
-  pi.events.on(SYNTHETIC_EXTENSIONS_REGISTER_EVENT, (data: unknown) => {
+  unsubscribeEventHandlers.push(pi.events.on(SYNTHETIC_EXTENSIONS_REGISTER_EVENT, (data: unknown) => {
     const { feature } = data as SyntheticExtensionsRegisterPayload;
     if (feature === "usageStatus") {
       syntheticUsageActive = true;
-      // If currently showing synthetic data, clear our footer
-      if (currentContext && enabled && deferToSynthetic && currentContext.model?.provider === "synthetic") {
-        currentContext.ui.setStatus(EXTENSION_ID, undefined);
+      const ctx = currentContext;
+      const provider = ctx ? readContextProvider(ctx) : undefined;
+      if (provider?.stale) {
+        currentContext = undefined;
         refresher.stop();
+        return;
+      }
+      // If currently showing synthetic data, clear our footer.
+      if (ctx && enabled && shouldDeferToSynthetic(provider?.provider)) {
+        refresher.stop(ctx);
       }
     }
-  });
+  }));
 
   function scheduleRefresh(ctx: ExtensionContext): void {
-    void refresher.refreshFor(ctx).catch(() => {
-      if (ctx.hasUI) ctx.ui.setStatus(EXTENSION_ID, ctx.ui.theme.fg("warning", "usage unavailable"));
+    void refresher.refreshFor(ctx).catch((error: unknown) => {
+      if (isStaleExtensionContextError(error)) {
+        if (currentContext === ctx) currentContext = undefined;
+        refresher.stop();
+        return;
+      }
+      if (!setUnavailableStatus(ctx)) {
+        if (currentContext === ctx) currentContext = undefined;
+        refresher.stop();
+      }
     });
   }
 
-  pi.events.on(QUOTAS_CONFIG_UPDATED_EVENT, (data: unknown) => {
+  unsubscribeEventHandlers.push(pi.events.on(QUOTAS_CONFIG_UPDATED_EVENT, (data: unknown) => {
     const config = (data as QuotasConfigUpdatedPayload).config;
     enabled = config.usageStatus;
     deferToSynthetic = config.deferToSynthetic;
@@ -194,7 +320,7 @@ export default async function (pi: ExtensionAPI) {
       refresher.start();
       scheduleRefresh(currentContext);
     }
-  });
+  }));
 
   /**
    * Whether to suppress our footer because pi-synthetic is showing
@@ -207,8 +333,14 @@ export default async function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     currentContext = ctx;
     if (!enabled) return;
-    if (shouldDeferToSynthetic(ctx.model?.provider)) {
-      ctx.ui.setStatus(EXTENSION_ID, undefined);
+    const provider = readContextProvider(ctx);
+    if (provider.stale) {
+      currentContext = undefined;
+      refresher.stop();
+      return;
+    }
+    if (shouldDeferToSynthetic(provider.provider)) {
+      refresher.stop(ctx);
       return;
     }
     refresher.start();
@@ -218,7 +350,16 @@ export default async function (pi: ExtensionAPI) {
   pi.on("turn_end", (_event, ctx) => {
     currentContext = ctx;
     if (!enabled) return;
-    if (shouldDeferToSynthetic(ctx.model?.provider)) return;
+    const provider = readContextProvider(ctx);
+    if (provider.stale) {
+      currentContext = undefined;
+      refresher.stop();
+      return;
+    }
+    if (shouldDeferToSynthetic(provider.provider)) {
+      refresher.stop(ctx);
+      return;
+    }
     scheduleRefresh(ctx);
   });
 
@@ -228,10 +369,17 @@ export default async function (pi: ExtensionAPI) {
       refresher.stop(ctx);
       return;
     }
-    if (shouldDeferToSynthetic(ctx.model?.provider)) {
-      ctx.ui.setStatus(EXTENSION_ID, undefined);
+    const provider = readContextProvider(ctx);
+    if (provider.stale) {
+      currentContext = undefined;
+      refresher.stop();
       return;
     }
+    if (shouldDeferToSynthetic(provider.provider)) {
+      refresher.stop(ctx);
+      return;
+    }
+    refresher.start();
     scheduleRefresh(ctx);
   });
 
@@ -239,11 +387,14 @@ export default async function (pi: ExtensionAPI) {
     currentContext = undefined;
     syntheticUsageActive = false;
     refresher.stop(ctx);
+    for (const unsubscribe of unsubscribeEventHandlers.splice(0)) {
+      unsubscribe();
+    }
   });
 
-  pi.events.on(QUOTAS_EXTENSIONS_REQUEST_EVENT, () => {
+  unsubscribeEventHandlers.push(pi.events.on(QUOTAS_EXTENSIONS_REQUEST_EVENT, () => {
     if (configLoader.getConfig().usageStatus) {
       pi.events.emit(QUOTAS_EXTENSIONS_REGISTER_EVENT, { feature: "usageStatus" });
     }
-  });
+  }));
 }
