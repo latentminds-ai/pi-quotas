@@ -148,7 +148,7 @@ function createStatusRefresher() {
       if (!ctx.hasUI || !activeProvider || !isSupportedProvider(activeProvider)) return;
 
       const provider = activeProvider;
-      const result = await fetchProviderQuotas(ctx.modelRegistry.authStorage, provider);
+      const result = await fetchProviderQuotas(ctx.modelRegistry, provider);
       if (requestGeneration !== generation || activeContext !== ctx) return;
 
       if (!result.success) {

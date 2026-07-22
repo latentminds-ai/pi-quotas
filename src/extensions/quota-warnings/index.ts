@@ -59,10 +59,7 @@ export default async function (pi: ExtensionAPI) {
     if (onlyNew && now - lastFetchAt < MIN_FETCH_INTERVAL_MS) return;
     lastFetchAt = now;
 
-    const result = await fetchProviderQuotas(
-      ctx.modelRegistry.authStorage,
-      provider,
-    );
+    const result = await fetchProviderQuotas(ctx.modelRegistry, provider);
     if (!result.success) return;
 
     const risky = result.data.windows

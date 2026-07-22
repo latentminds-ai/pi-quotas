@@ -1,5 +1,7 @@
-import type { AuthStorage } from "@mariozechner/pi-coding-agent";
-import { PROVIDER_FETCHERS } from "../providers/fetch.js";
+import {
+  PROVIDER_FETCHERS,
+  type QuotaAuthSource,
+} from "../providers/fetch.js";
 import type { QuotasResult, SupportedQuotaProvider } from "../types/quotas.js";
 
 export const SUPPORTED_PROVIDERS: SupportedQuotaProvider[] = [
@@ -52,7 +54,7 @@ export function clearQuotaCache(provider?: SupportedQuotaProvider): void {
 }
 
 export async function fetchProviderQuotas(
-  authStorage: AuthStorage,
+  authSource: QuotaAuthSource,
   provider: SupportedQuotaProvider,
   options?: { force?: boolean; signal?: AbortSignal },
 ): Promise<QuotasResult> {
@@ -70,7 +72,7 @@ export async function fetchProviderQuotas(
   }
   if (!options?.force && entry.inFlight) return entry.inFlight;
 
-  const promise = PROVIDER_FETCHERS[provider](authStorage, options?.signal)
+  const promise = PROVIDER_FETCHERS[provider](authSource, options?.signal)
     .then((result: QuotasResult) => {
       cache.set(provider, { result, fetchedAt: Date.now() });
       return result;
@@ -86,13 +88,13 @@ export async function fetchProviderQuotas(
 }
 
 export async function fetchAllProviderQuotas(
-  authStorage: AuthStorage,
+  authSource: QuotaAuthSource,
   options?: { force?: boolean; signal?: AbortSignal },
 ): Promise<Array<{ provider: SupportedQuotaProvider; result: QuotasResult }>> {
   return Promise.all(
     SUPPORTED_PROVIDERS.map(async (provider) => ({
       provider,
-      result: await fetchProviderQuotas(authStorage, provider, options),
+      result: await fetchProviderQuotas(authSource, provider, options),
     })),
   );
 }

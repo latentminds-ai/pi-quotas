@@ -1,7 +1,8 @@
-import { AuthStorage } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fetchAnthropicQuotasWithToken,
+  fetchCodexQuotas,
   fetchCodexQuotasWithToken,
   fetchGitHubCopilotQuotas,
   fetchGitHubCopilotQuotasWithToken,
@@ -58,6 +59,37 @@ describe("fetchAnthropicQuotasWithToken", () => {
 });
 
 describe("fetchCodexQuotasWithToken", () => {
+  it("supports Pi model registries that do not expose authStorage", async () => {
+    const accountId = "acct_from_access_token";
+    const payload = Buffer.from(
+      JSON.stringify({
+        "https://api.openai.com/auth": { chatgpt_account_id: accountId },
+      }),
+    ).toString("base64url");
+    const accessToken = `header.${payload}.signature`;
+    const modelRegistry = {
+      getApiKeyForProvider: vi.fn(async () => accessToken),
+    } as any;
+
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ rate_limit: {} }), { status: 200 }),
+    ) as any;
+
+    const result = await fetchCodexQuotas(modelRegistry);
+
+    expect(result.success).toBe(true);
+    expect(modelRegistry.getApiKeyForProvider).toHaveBeenCalledWith("openai-codex");
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "https://chatgpt.com/backend-api/wham/usage",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: `Bearer ${accessToken}`,
+          "ChatGPT-Account-Id": accountId,
+        }),
+      }),
+    );
+  });
+
   it("returns config error when account id missing", async () => {
     const result = await fetchCodexQuotasWithToken("token", undefined);
     expect(result).toMatchObject({
@@ -177,7 +209,7 @@ describe("fetchGitHubCopilotQuotasWithToken", () => {
       return new Response(JSON.stringify({ message: "Bad credentials" }), { status: 401 });
     }) as any;
 
-    const result = await fetchGitHubCopilotQuotas(auth);
+    const result = await fetchGitHubCopilotQuotas(new ModelRegistry(auth));
 
     expect(result.success).toBe(true);
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);

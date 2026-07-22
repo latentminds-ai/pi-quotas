@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Modern Pi authentication compatibility**: quota checks now resolve provider credentials through `ModelRegistry` instead of relying on its removed public `authStorage` property. This restores footer quota status, quota warnings, and `/codex:quotas` on newer Pi releases while remaining compatible with older releases. Codex account IDs are recovered from the OAuth access-token claim when raw credential storage is unavailable, and unexpected dashboard loading errors are reported without crashing Pi.
+
 ## [0.3.1] - 2026-07-09
 
 ### Fixed

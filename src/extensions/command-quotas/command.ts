@@ -38,10 +38,17 @@ async function openQuotaView(
     );
 
     async function load(force = false): Promise<void> {
-      const snapshots = await loadSnapshots(force, controller.signal);
-      if (controller.signal.aborted) return;
-      component.setState({ type: "loaded", snapshots });
-      tui.requestRender();
+      try {
+        const snapshots = await loadSnapshots(force, controller.signal);
+        if (controller.signal.aborted) return;
+        component.setState({ type: "loaded", snapshots });
+        tui.requestRender();
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        const message = error instanceof Error ? error.message : String(error);
+        ctx.ui.notify(`Failed to load quotas: ${message}`, "error");
+        done(null);
+      }
     }
 
     void load();
@@ -95,7 +102,7 @@ export function registerQuotasCommands(pi: ExtensionAPI): void {
       }
       await openQuotaView(
         "Provider Quotas",
-        (force, signal) => fetchAllProviderQuotas(ctx.modelRegistry.authStorage, { force, signal }),
+        (force, signal) => fetchAllProviderQuotas(ctx.modelRegistry, { force, signal }),
         ctx,
       );
     },
@@ -115,7 +122,7 @@ export function registerQuotasCommands(pi: ExtensionAPI): void {
           async (force, signal) => [
             {
               provider,
-              result: await fetchProviderQuotas(ctx.modelRegistry.authStorage, provider, { force, signal }),
+              result: await fetchProviderQuotas(ctx.modelRegistry, provider, { force, signal }),
             },
           ],
           ctx,

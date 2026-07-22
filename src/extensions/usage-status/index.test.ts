@@ -90,7 +90,7 @@ function createContext(provider: string) {
       if (stale) throw new Error(STALE_CONTEXT_ERROR);
       return { provider };
     },
-    modelRegistry: { authStorage: {} },
+    modelRegistry: { getApiKeyForProvider: vi.fn() },
     ui: {
       theme: { fg: (_color: string, text: string) => text },
       setStatus,
@@ -173,6 +173,8 @@ describe("usage-status extension lifecycle", () => {
     await emitExtensionEvent("session_start", ctx);
     await vi.runOnlyPendingTimersAsync();
     await vi.advanceTimersByTimeAsync(0);
+
+    expect(fetchProviderQuotas).toHaveBeenCalledWith(ctx.modelRegistry, "anthropic");
 
     const calls = setStatus.mock.calls as unknown as Array<[string, string | undefined]>;
     const last = calls[calls.length - 1]?.[1];

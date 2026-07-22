@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { AuthStorage } from "@mariozechner/pi-coding-agent";
+import type { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import type { QuotasErrorKind, QuotasResult, SupportedQuotaProvider } from "../types/quotas.js";
 import {
   parseAnthropicUsage,
@@ -27,11 +27,24 @@ function isTimeoutReason(reason: unknown): boolean {
   );
 }
 
+export type QuotaAuthSource = AuthStorage | ModelRegistry;
+
+function authStorageFrom(source: QuotaAuthSource): AuthStorage | undefined {
+  if (typeof (source as ModelRegistry).getApiKeyForProvider === "function") {
+    return (source as ModelRegistry).authStorage;
+  }
+  return source as AuthStorage;
+}
+
 async function providerAccessToken(
-  authStorage: AuthStorage,
+  source: QuotaAuthSource,
   provider: string,
 ): Promise<string | undefined> {
-  return authStorage.getApiKey(provider);
+  const registry = source as ModelRegistry;
+  if (typeof registry.getApiKeyForProvider === "function") {
+    return registry.getApiKeyForProvider(provider);
+  }
+  return (source as AuthStorage).getApiKey(provider);
 }
 
 /**
@@ -44,9 +57,31 @@ function isDirectAnthropicApiKey(token: string): boolean {
   return token.startsWith("sk-ant-");
 }
 
-function codexAccountId(authStorage: AuthStorage): string | undefined {
-  const credential = authStorage.get("openai-codex") as any;
+function codexAccountIdFromAccessToken(accessToken: string | undefined): string | undefined {
+  if (!accessToken) return undefined;
+  try {
+    const payload = JSON.parse(
+      Buffer.from(accessToken.split(".")[1] ?? "", "base64url").toString("utf8"),
+    ) as any;
+    const accountId = payload?.["https://api.openai.com/auth"]?.chatgpt_account_id;
+    return typeof accountId === "string" && accountId.length > 0
+      ? accountId
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function codexAccountId(
+  source: QuotaAuthSource,
+  accessToken: string | undefined,
+): string | undefined {
+  const credential = authStorageFrom(source)?.get("openai-codex") as any;
   if (typeof credential?.accountId === "string") return credential.accountId;
+
+  const tokenAccountId = codexAccountIdFromAccessToken(accessToken);
+  if (tokenAccountId) return tokenAccountId;
+
   try {
     const authPath = join(homedir(), ".codex", "auth.json");
     const data = JSON.parse(readFileSync(authPath, "utf8")) as any;
@@ -239,11 +274,11 @@ async function tryGitHubUserEndpoint(
   );
 }
 
-function githubOAuthToken(authStorage: AuthStorage): string | undefined {
+function githubOAuthToken(source: QuotaAuthSource): string | undefined {
   // Pi's GitHub Copilot OAuth credential stores the GitHub OAuth token in
   // `refresh`; `access` is a Copilot proxy token (tid=...;proxy-ep=...) that
   // is valid for model calls but rejected by api.github.com quota endpoints.
-  const credential = authStorage.get("github-copilot") as any;
+  const credential = authStorageFrom(source)?.get("github-copilot") as any;
   if (credential?.type !== "oauth") return undefined;
   return typeof credential.refresh === "string" && credential.refresh.length > 0
     ? credential.refresh
@@ -318,32 +353,33 @@ export async function fetchGitHubCopilotQuotasWithToken(
 }
 
 export async function fetchAnthropicQuotas(
-  authStorage: AuthStorage,
+  authSource: QuotaAuthSource,
   signal?: AbortSignal,
 ): Promise<QuotasResult> {
   return fetchAnthropicQuotasWithToken(
-    await providerAccessToken(authStorage, "anthropic"),
+    await providerAccessToken(authSource, "anthropic"),
     signal,
   );
 }
 
 export async function fetchCodexQuotas(
-  authStorage: AuthStorage,
+  authSource: QuotaAuthSource,
   signal?: AbortSignal,
 ): Promise<QuotasResult> {
+  const accessToken = await providerAccessToken(authSource, "openai-codex");
   return fetchCodexQuotasWithToken(
-    await providerAccessToken(authStorage, "openai-codex"),
-    codexAccountId(authStorage),
+    accessToken,
+    codexAccountId(authSource, accessToken),
     signal,
   );
 }
 
 export async function fetchGitHubCopilotQuotas(
-  authStorage: AuthStorage,
+  authSource: QuotaAuthSource,
   signal?: AbortSignal,
 ): Promise<QuotasResult> {
   const oauthResult = await fetchGitHubCopilotQuotasWithGitHubToken(
-    githubOAuthToken(authStorage),
+    githubOAuthToken(authSource),
     signal,
   );
   if (
@@ -355,7 +391,7 @@ export async function fetchGitHubCopilotQuotas(
   }
 
   return fetchGitHubCopilotQuotasWithToken(
-    await providerAccessToken(authStorage, "github-copilot"),
+    await providerAccessToken(authSource, "github-copilot"),
     signal,
   );
 }
@@ -380,17 +416,17 @@ export async function fetchOpenRouterQuotasWithToken(
 }
 
 export async function fetchOpenRouterQuotas(
-  authStorage: AuthStorage,
+  authSource: QuotaAuthSource,
   signal?: AbortSignal,
 ): Promise<QuotasResult> {
   return fetchOpenRouterQuotasWithToken(
-    await providerAccessToken(authStorage, "openrouter"),
+    await providerAccessToken(authSource, "openrouter"),
     signal,
   );
 }
 
 export async function fetchSyntheticQuotas(
-  _authStorage: AuthStorage,
+  _authSource: QuotaAuthSource,
   signal?: AbortSignal,
 ): Promise<QuotasResult> {
   const apiKey = process.env.SYNTHETIC_API_KEY;
@@ -412,7 +448,7 @@ export async function fetchSyntheticQuotas(
 }
 
 export async function fetchOpenCodeGoQuotas(
-  _authStorage: AuthStorage,
+  _authSource: QuotaAuthSource,
   signal?: AbortSignal,
 ): Promise<QuotasResult> {
   const configResult = await resolveOpenCodeGoConfigCached();
@@ -462,10 +498,10 @@ export async function fetchZaiQuotasWithToken(
 }
 
 export async function fetchZaiQuotas(
-  authStorage: AuthStorage,
+  authSource: QuotaAuthSource,
   signal?: AbortSignal,
 ): Promise<QuotasResult> {
-  return fetchZaiQuotasWithToken(await providerAccessToken(authStorage, "zai"), signal);
+  return fetchZaiQuotasWithToken(await providerAccessToken(authSource, "zai"), signal);
 }
 
 export const PROVIDER_FETCHERS = {
