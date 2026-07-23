@@ -52,5 +52,11 @@ export function getProviderCommandInfo(
         commandName: "opencode-go:quotas",
         title: "OpenCode Go Quotas",
       };
+    case "deepseek":
+      return {
+        provider,
+        commandName: "deepseek:quotas",
+        title: "DeepSeek Balance",
+      };
   }
 }

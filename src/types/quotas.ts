@@ -5,7 +5,8 @@ export type SupportedQuotaProvider =
   | "openrouter"
   | "synthetic"
   | "zai"
-  | "opencode-go";
+  | "opencode-go"
+  | "deepseek";
 
 export type QuotasErrorKind =
   | "cancelled"

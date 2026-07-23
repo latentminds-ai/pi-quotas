@@ -12,6 +12,7 @@ import {
   parseSyntheticUsage,
   parseZaiUsage,
   parseOpenCodeGoUsage,
+  parseDeepSeekUsage,
 } from "./providers.js";
 import { resolveOpenCodeGoConfigCached } from "./opencode-go-config.js";
 import { queryOpenCodeGoQuota } from "./opencode-go.js";
@@ -468,6 +469,35 @@ export async function fetchZaiQuotas(
   return fetchZaiQuotasWithToken(await providerAccessToken(authStorage, "zai"), signal);
 }
 
+export async function fetchDeepSeekQuotasWithToken(
+  apiKey: string | undefined,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  if (!apiKey) return failure("No DeepSeek API key found", "config");
+  const result = await fetchJson(
+    "https://api.deepseek.com/user/balance",
+    {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    },
+    signal,
+  );
+  if (!result.ok) return failure(result.message, result.kind);
+  return success("deepseek", parseDeepSeekUsage(result.data));
+}
+
+export async function fetchDeepSeekQuotas(
+  authStorage: AuthStorage,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  return fetchDeepSeekQuotasWithToken(
+    await providerAccessToken(authStorage, "deepseek"),
+    signal,
+  );
+}
+
 export const PROVIDER_FETCHERS = {
   anthropic: fetchAnthropicQuotas,
   "openai-codex": fetchCodexQuotas,
@@ -476,4 +506,5 @@ export const PROVIDER_FETCHERS = {
   synthetic: fetchSyntheticQuotas,
   zai: fetchZaiQuotas,
   "opencode-go": fetchOpenCodeGoQuotas,
+  deepseek: fetchDeepSeekQuotas,
 } as const;

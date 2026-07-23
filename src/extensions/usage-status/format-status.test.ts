@@ -63,6 +63,22 @@ describe("formatWindowStatus", () => {
     expect(result).toContain("[warning]");
   });
 
+  it("shows remaining balance for prepaid currency windows", () => {
+    const w: WindowStatus = {
+      label: "Balance",
+      usedPercent: 0,
+      severity: "none",
+      resetsAt: null,
+      limited: false,
+      isCurrency: true,
+      usedValue: 3.1,
+      limitValue: 0,
+    };
+    const result = formatWindowStatus(theme, w);
+    expect(result).toContain("$3.10 left");
+    expect(result).not.toContain("used");
+  });
+
   it("shows REACHED for spend cap", () => {
     const w: WindowStatus = {
       label: "Spend cap",

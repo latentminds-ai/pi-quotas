@@ -6,6 +6,7 @@ import { parseOpenRouterUsage } from "./providers.js";
 import { parseSyntheticUsage } from "./providers.js";
 import { parseZaiUsage } from "./providers.js";
 import { parseOpenCodeGoUsage } from "./providers.js";
+import { parseDeepSeekUsage } from "./providers.js";
 
 describe("parseAnthropicUsage", () => {
   it("maps oauth usage response into quota windows", () => {
@@ -633,6 +634,52 @@ describe("parseOpenCodeGoUsage", () => {
   it("returns empty for no data", () => {
     const windows = parseOpenCodeGoUsage({});
     expect(windows).toHaveLength(0);
+  });
+});
+
+describe("parseDeepSeekUsage", () => {
+  it("maps balance infos into currency balance windows", () => {
+    const windows = parseDeepSeekUsage({
+      is_available: true,
+      balance_infos: [
+        {
+          currency: "USD",
+          total_balance: "3.10",
+          granted_balance: "5.00",
+          topped_up_balance: "0.00",
+        },
+      ],
+    });
+
+    expect(windows).toHaveLength(1);
+    expect(windows[0]).toMatchObject({
+      provider: "deepseek",
+      label: "Balance",
+      usedPercent: 0,
+      usedValue: 3.1,
+      limitValue: 0,
+      isCurrency: true,
+      limited: false,
+      nextLabel: "Remaining",
+    });
+  });
+
+  it("marks zero or unavailable balances as limited", () => {
+    const windows = parseDeepSeekUsage({
+      is_available: false,
+      balance_infos: [{ currency: "USD", total_balance: "0" }],
+    });
+
+    expect(windows[0]).toMatchObject({
+      usedPercent: 100,
+      limited: true,
+      nextLabel: "Unavailable",
+    });
+  });
+
+  it("returns empty array when balance infos are missing", () => {
+    expect(parseDeepSeekUsage({})).toHaveLength(0);
+    expect(parseDeepSeekUsage({ data: {} })).toHaveLength(0);
   });
 });
 

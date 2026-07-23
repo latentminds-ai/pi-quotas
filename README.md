@@ -1,6 +1,6 @@
 # @latentminds/pi-quotas
 
-Quota monitoring for Pi. Shows remaining usage and rate limits for Anthropic, OpenAI Codex, GitHub Copilot, OpenRouter, Synthetic, Z.ai, and OpenCode Go — directly in your Pi session.
+Quota monitoring for Pi. Shows remaining usage and rate limits for Anthropic, OpenAI Codex, GitHub Copilot, OpenRouter, Synthetic, Z.ai, OpenCode Go, and DeepSeek — directly in your Pi session.
 
 ## Screenshots
 
@@ -44,6 +44,7 @@ pi -e npm:@latentminds/pi-quotas
 | `/synthetic:quotas`  | Synthetic quotas only                      |
 | `/zai:quotas`        | Z.ai quotas only                           |
 | `/opencode-go:quotas`| OpenCode Go quotas only                    |
+| `/deepseek:quotas`   | DeepSeek balance only                      |
 | `/tokens`            | Cross-session token/cost usage            |
 | `/quotas:settings`   | Toggle individual features on or off       |
 
@@ -86,6 +87,7 @@ Settings can be saved globally (`~/.pi/agent/extensions/quotas.json`) or per-pro
 | Synthetic      | Subscription, search/hour, free tools, weekly tokens, 5h limit | Request counts and token budgets; rolling five-hour rate limit; weekly token regen                  |
 | Z.ai           | 5h, 7d, monthly web searches                                  | Token utilisation percentages (rolling 5h/7d windows); monthly web-search count limit               |
 | OpenCode Go    | Rolling 5h, weekly, monthly USD                              | USD spend tracking against tier limits; cross-session token/cost aggregation via the `/tokens` command |
+| DeepSeek       | API balance                                                   | Remaining prepaid API balance from `platform.deepseek.com` / `api.deepseek.com`                    |
 
 
 ## Credentials
@@ -99,6 +101,7 @@ pi-quotas reads existing Pi auth entries from `~/.pi/agent/auth.json`:
 - `synthetic` — Synthetic API key (set the `SYNTHETIC_API_KEY` environment variable)
 - `zai` — Z.ai (Zhipu AI / GLM Coding Plan) API key
 - `opencode-go` — OpenCode Go workspace ID and auth cookie (set the `OPENCODE_GO_WORKSPACE_ID` and `OPENCODE_GO_AUTH_COOKIE` environment variables, or configure them in the OpenCode Go config file)
+- `deepseek` — DeepSeek API key (the same key Pi uses for the DeepSeek provider)
 
 No additional setup is required - if Pi can use the provider, pi-quotas can check its quotas. For Synthetic, export `SYNTHETIC_API_KEY` in your shell or Pi environment.
 

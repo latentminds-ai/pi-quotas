@@ -165,8 +165,10 @@ export class QuotasComponent implements Component {
       // Format the usage string depending on window type
       let usedStr: string;
       if (window.isCurrency) {
-        // Tracking-only windows have limitValue=0, show just usage
-        if (window.limitValue === 0) {
+        // Balance windows are prepaid remaining credit, not spend usage.
+        if (window.label === "Balance" || window.label.startsWith("Balance (")) {
+          usedStr = `$${window.usedValue.toFixed(2)} left`;
+        } else if (window.limitValue === 0) {
           usedStr = `$${window.usedValue.toFixed(2)} used`;
         } else {
           usedStr = `$${window.usedValue.toFixed(2)} / $${window.limitValue.toFixed(2)}`;

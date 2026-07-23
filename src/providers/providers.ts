@@ -642,3 +642,33 @@ export function parseZaiUsage(data: any): QuotaWindow[] {
   collected.sort((a, b) => a.windowSeconds - b.windowSeconds);
   return collected;
 }
+
+// DeepSeek exposes prepaid API balance rather than rolling quota windows.
+// Endpoint: https://api.deepseek.com/user/balance
+// Shape: { is_available: boolean, balance_infos: [{ currency, total_balance, ... }] }
+export function parseDeepSeekUsage(data: any): QuotaWindow[] {
+  const windows: QuotaWindow[] = [];
+  const balances: any[] = data?.balance_infos ?? data?.data?.balance_infos ?? [];
+  if (!Array.isArray(balances)) return windows;
+
+  for (const balance of balances) {
+    const currency = String(balance?.currency ?? "USD").toUpperCase();
+    const total = Number(balance?.total_balance ?? 0);
+    if (!Number.isFinite(total)) continue;
+    windows.push({
+      provider: "deepseek",
+      label: currency === "USD" ? "Balance" : `Balance (${currency})`,
+      usedPercent: data?.is_available === false || total <= 0 ? 100 : 0,
+      resetsAt: new Date(0),
+      windowSeconds: 0,
+      usedValue: total,
+      limitValue: 0,
+      isCurrency: true,
+      limited: data?.is_available === false || total <= 0,
+      showPace: false,
+      nextLabel: data?.is_available === false ? "Unavailable" : "Remaining",
+    });
+  }
+
+  return windows;
+}

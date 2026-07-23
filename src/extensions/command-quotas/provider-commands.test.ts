@@ -49,4 +49,13 @@ describe("getProviderCommandInfo", () => {
       title: "Z.ai Quotas",
     });
   });
+
+  it("maps deepseek to deepseek:quotas", () => {
+    const info = getProviderCommandInfo("deepseek");
+    expect(info).toMatchObject<Partial<ProviderCommandInfo>>({
+      provider: "deepseek",
+      commandName: "deepseek:quotas",
+      title: "DeepSeek Balance",
+    });
+  });
 });

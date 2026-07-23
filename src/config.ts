@@ -170,7 +170,7 @@ const FEATURE_META: Array<{
     id: "providerCommands",
     label: "Provider quota commands",
     description:
-      "Toggle `/anthropic:quotas`, `/codex:quotas`, `/github:quotas`, `/openrouter:quotas`, and `/synthetic:quotas`",
+      "Toggle per-provider quota commands including `/anthropic:quotas`, `/codex:quotas`, `/github:quotas`, `/openrouter:quotas`, `/synthetic:quotas`, and `/deepseek:quotas`",
   },
   {
     id: "usageStatus",

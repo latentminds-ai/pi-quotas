@@ -10,6 +10,7 @@ export const SUPPORTED_PROVIDERS: SupportedQuotaProvider[] = [
   "synthetic",
   "zai",
   "opencode-go",
+  "deepseek",
 ];
 
 export const PROVIDER_LABELS: Record<SupportedQuotaProvider, string> = {
@@ -20,6 +21,7 @@ export const PROVIDER_LABELS: Record<SupportedQuotaProvider, string> = {
   synthetic: "Synthetic",
   zai: "Z.ai",
   "opencode-go": "OpenCode Go",
+  deepseek: "DeepSeek",
 };
 
 const PROVIDER_TTLS_MS: Record<SupportedQuotaProvider, number> = {
@@ -30,6 +32,7 @@ const PROVIDER_TTLS_MS: Record<SupportedQuotaProvider, number> = {
   synthetic: 60_000,
   zai: 60_000,
   "opencode-go": 60_000,
+  deepseek: 60_000,
 };
 
 type CacheEntry = {

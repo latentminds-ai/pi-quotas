@@ -6,6 +6,7 @@ import {
   fetchGitHubCopilotQuotas,
   fetchGitHubCopilotQuotasWithToken,
   fetchOpenRouterQuotasWithToken,
+  fetchDeepSeekQuotasWithToken,
 } from "./fetch.js";
 
 const originalFetch = globalThis.fetch;
@@ -185,6 +186,45 @@ describe("fetchGitHubCopilotQuotasWithToken", () => {
       "https://api.github.com/copilot_internal/user",
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: "Bearer ghu-refresh-token" }),
+      }),
+    );
+  });
+});
+
+describe("fetchDeepSeekQuotasWithToken", () => {
+  it("returns config error when token missing", async () => {
+    const result = await fetchDeepSeekQuotasWithToken(undefined);
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "config" },
+    });
+  });
+
+  it("fetches and parses DeepSeek balance", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          is_available: true,
+          balance_infos: [{ currency: "USD", total_balance: "3.10" }],
+        }),
+        { status: 200 },
+      ),
+    ) as any;
+
+    const result = await fetchDeepSeekQuotasWithToken("sk-deepseek");
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.provider).toBe("deepseek");
+      expect(result.data.windows[0]).toMatchObject({
+        label: "Balance",
+        usedValue: 3.1,
+        isCurrency: true,
+      });
+    }
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "https://api.deepseek.com/user/balance",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer sk-deepseek" }),
       }),
     );
   });

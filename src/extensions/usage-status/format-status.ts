@@ -42,6 +42,8 @@ const SHORT_LABELS: Record<string, string> = {
   "Requests / 5h": "5h",
   "Search / hour": "search",
   "Free Tool Calls / day": "tools",
+  // DeepSeek labels
+  "Balance": "balance",
 };
 
 /**
@@ -88,8 +90,10 @@ export function formatWindowStatus(theme: ThemeLike, w: WindowStatus): string {
   } else if (w.label === "Spend cap") {
     valueText = theme.fg(color, w.limited ? "REACHED" : "OK");
   } else if (w.isCurrency && w.usedValue != null && w.limitValue != null) {
-    // Tracking-only windows have limitValue=0, show just usage
-    if (w.limitValue === 0) {
+    // Balance windows are prepaid remaining credit, not spend usage.
+    if (w.label === "Balance" || w.label.startsWith("Balance (")) {
+      valueText = theme.fg(color, `$${w.usedValue.toFixed(2)} left`);
+    } else if (w.limitValue === 0) {
       valueText = theme.fg(color, `$${w.usedValue.toFixed(2)} used`);
     } else {
       valueText = theme.fg(color, `$${w.usedValue.toFixed(2)}/$${w.limitValue.toFixed(2)}`);
