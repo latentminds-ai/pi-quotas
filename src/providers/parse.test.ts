@@ -121,6 +121,45 @@ describe("parseCodexUsage", () => {
     });
   });
 
+  it("derives the primary label from the server window duration", () => {
+    const windows = parseCodexUsage({
+      rate_limit: {
+        primary_window: {
+          used_percent: 7,
+          reset_at: 1786186041,
+          limit_window_seconds: 604800,
+        },
+        secondary_window: null,
+      },
+      spend_control: { reached: false },
+    });
+
+    expect(windows[0]).toMatchObject({
+      provider: "openai-codex",
+      label: "7d",
+      usedPercent: 7,
+      windowSeconds: 604800,
+    });
+  });
+
+  it("falls back to standard labels for invalid durations", () => {
+    const windows = parseCodexUsage({
+      rate_limit: {
+        primary_window: {
+          used_percent: 1,
+          limit_window_seconds: "invalid",
+        },
+        secondary_window: {
+          used_percent: 2,
+          limit_window_seconds: 0,
+        },
+      },
+    });
+
+    expect(windows[0]).toMatchObject({ label: "5h", windowSeconds: 18000 });
+    expect(windows[1]).toMatchObject({ label: "7d", windowSeconds: 604800 });
+  });
+
   it("handles alternate field names", () => {
     const windows = parseCodexUsage({
       rate_limits: {

@@ -112,6 +112,20 @@ function percentLeftToUsedPercent(limit: any): number {
   return 0;
 }
 
+function codexWindowSeconds(value: unknown, fallback: number): number {
+  const seconds = Number(value ?? fallback);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : fallback;
+}
+
+function codexWindowLabel(windowSeconds: number): string {
+  if (windowSeconds % (24 * 60 * 60) === 0)
+    return `${windowSeconds / (24 * 60 * 60)}d`;
+  if (windowSeconds % (60 * 60) === 0)
+    return `${windowSeconds / (60 * 60)}h`;
+  if (windowSeconds % 60 === 0) return `${windowSeconds / 60}m`;
+  return `${windowSeconds}s`;
+}
+
 export function parseCodexUsage(data: any): QuotaWindow[] {
   const rateLimit = data?.rate_limit ?? data?.rate_limits ?? {};
   const primary =
@@ -128,12 +142,16 @@ export function parseCodexUsage(data: any): QuotaWindow[] {
   const windows: QuotaWindow[] = [];
 
   if (primary) {
+    const windowSeconds = codexWindowSeconds(
+      primary.limit_window_seconds,
+      5 * 60 * 60,
+    );
     windows.push({
       provider: "openai-codex",
-      label: "5h",
+      label: codexWindowLabel(windowSeconds),
       usedPercent: percentLeftToUsedPercent(primary),
       resetsAt: parseDateish(primary.reset_at ?? primary.reset_time_ms),
-      windowSeconds: Number(primary.limit_window_seconds ?? 5 * 60 * 60),
+      windowSeconds,
       usedValue: percentLeftToUsedPercent(primary),
       limitValue: 100,
       showPace: false,
@@ -142,12 +160,16 @@ export function parseCodexUsage(data: any): QuotaWindow[] {
   }
 
   if (secondary) {
+    const windowSeconds = codexWindowSeconds(
+      secondary.limit_window_seconds,
+      7 * 24 * 60 * 60,
+    );
     windows.push({
       provider: "openai-codex",
-      label: "7d",
+      label: codexWindowLabel(windowSeconds),
       usedPercent: percentLeftToUsedPercent(secondary),
       resetsAt: parseDateish(secondary.reset_at ?? secondary.reset_time_ms),
-      windowSeconds: Number(secondary.limit_window_seconds ?? 7 * 24 * 60 * 60),
+      windowSeconds,
       usedValue: percentLeftToUsedPercent(secondary),
       limitValue: 100,
       showPace: false,
