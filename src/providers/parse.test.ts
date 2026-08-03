@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseAnthropicUsage } from "./providers.js";
 import { parseCodexUsage } from "./providers.js";
 import { parseGitHubCopilotUsage } from "./providers.js";
+import { parseKimiCodingUsage } from "./providers.js";
 import { parseOpenRouterUsage } from "./providers.js";
 import { parseSyntheticUsage } from "./providers.js";
 import { parseZaiUsage } from "./providers.js";
@@ -633,6 +634,107 @@ describe("parseOpenCodeGoUsage", () => {
   it("returns empty for no data", () => {
     const windows = parseOpenCodeGoUsage({});
     expect(windows).toHaveLength(0);
+  });
+});
+
+describe("parseKimiCodingUsage", () => {
+  it("maps weekly and five-hour subscription windows", () => {
+    const windows = parseKimiCodingUsage({
+      limited: true,
+      usage: {
+        limit: "100",
+        used: "20",
+        remaining: "80",
+        resetTime: "2026-08-10T10:01:47.875212Z",
+      },
+      limits: [
+        {
+          window: { duration: 300, timeUnit: "TIME_UNIT_MINUTE" },
+          detail: {
+            limit: "100",
+            used: "45",
+            resetTime: "2026-08-03T15:01:47.875212Z",
+          },
+        },
+      ],
+    });
+
+    expect(windows).toHaveLength(2);
+    expect(windows[0]).toMatchObject({
+      provider: "kimi-coding",
+      label: "5h",
+      usedPercent: 45,
+      usedValue: 45,
+      limitValue: 100,
+      windowSeconds: 5 * 60 * 60,
+      limited: false,
+    });
+    expect(windows[1]).toMatchObject({
+      provider: "kimi-coding",
+      label: "Weekly",
+      usedPercent: 20,
+      usedValue: 20,
+      limitValue: 100,
+      windowSeconds: 7 * 24 * 60 * 60,
+      limited: false,
+    });
+  });
+
+  it("marks an exhausted rolling window as limited", () => {
+    const windows = parseKimiCodingUsage({
+      limits: [
+        {
+          window: { duration: 60, timeUnit: "TIME_UNIT_MINUTE" },
+          detail: {
+            limit: "10",
+            used: "10",
+            resetTime: "2026-08-03T11:00:00Z",
+          },
+        },
+      ],
+    });
+
+    expect(windows[0]).toMatchObject({ label: "1h", limited: true });
+  });
+
+  it("maps non-minute window units without mislabeling them", () => {
+    const windows = parseKimiCodingUsage({
+      limits: [
+        {
+          window: { duration: 90, timeUnit: "TIME_UNIT_SECOND" },
+          detail: { limit: "10", used: "1", resetTime: "2026-08-03T11:00:00Z" },
+        },
+        {
+          window: { duration: 2, timeUnit: "TIME_UNIT_DAY" },
+          detail: { limit: "20", used: "2", resetTime: "2026-08-05T11:00:00Z" },
+        },
+      ],
+    });
+
+    expect(windows.map(({ label, windowSeconds }) => ({ label, windowSeconds }))).toEqual([
+      { label: "90s", windowSeconds: 90 },
+      { label: "2d", windowSeconds: 2 * 24 * 60 * 60 },
+    ]);
+  });
+
+  it("ignores missing, malformed, unknown, and zero-valued limits", () => {
+    expect(parseKimiCodingUsage({})).toHaveLength(0);
+    expect(
+      parseKimiCodingUsage({
+        usage: { limit: "invalid", used: "invalid" },
+        limits: [
+          { window: { duration: 0 }, detail: { limit: "0" } },
+          {
+            window: { duration: 5, timeUnit: "TIME_UNIT_UNKNOWN" },
+            detail: { limit: "10", used: "1" },
+          },
+          {
+            window: { duration: "invalid", timeUnit: "TIME_UNIT_MINUTE" },
+            detail: { limit: "10", used: "invalid" },
+          },
+        ],
+      }),
+    ).toHaveLength(0);
   });
 });
 

@@ -5,6 +5,7 @@ import {
   fetchCodexQuotasWithToken,
   fetchGitHubCopilotQuotas,
   fetchGitHubCopilotQuotasWithToken,
+  fetchKimiCodingQuotasWithToken,
   fetchOpenRouterQuotasWithToken,
 } from "./fetch.js";
 
@@ -185,6 +186,58 @@ describe("fetchGitHubCopilotQuotasWithToken", () => {
       "https://api.github.com/copilot_internal/user",
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: "Bearer ghu-refresh-token" }),
+      }),
+    );
+  });
+});
+
+describe("fetchKimiCodingQuotasWithToken", () => {
+  it("returns config error when token missing", async () => {
+    const result = await fetchKimiCodingQuotasWithToken(undefined);
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "config" },
+    });
+  });
+
+  it("fetches and parses Kimi Code subscription windows", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          usage: {
+            limit: "100",
+            used: "20",
+            remaining: "80",
+            resetTime: "2026-08-10T10:01:47.875212Z",
+          },
+          limits: [
+            {
+              window: { duration: 300, timeUnit: "TIME_UNIT_MINUTE" },
+              detail: {
+                limit: "100",
+                used: "45",
+                resetTime: "2026-08-03T15:01:47.875212Z",
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    ) as any;
+
+    const result = await fetchKimiCodingQuotasWithToken("kimi-token");
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.provider).toBe("kimi-coding");
+      expect(result.data.windows).toHaveLength(2);
+    }
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "https://api.kimi.com/coding/v1/usages",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer kimi-token",
+        }),
       }),
     );
   });

@@ -554,6 +554,91 @@ export function parseOpenCodeGoUsage(data: {
   return windows;
 }
 
+// Kimi Code subscription quotas. The /coding/v1/usages endpoint exposes a
+// weekly allowance plus one or more shorter rolling windows.
+export function parseKimiCodingUsage(data: any): QuotaWindow[] {
+  const windows: QuotaWindow[] = [];
+
+  const weekly = data?.usage;
+  if (weekly && typeof weekly === "object") {
+    const limit = Number(weekly.limit ?? 0);
+    const used = Number(weekly.used ?? 0);
+    if (Number.isFinite(limit) && Number.isFinite(used) && limit > 0) {
+      windows.push({
+        provider: "kimi-coding",
+        label: "Weekly",
+        usedPercent: safePercent(used, limit),
+        resetsAt: parseDateish(weekly.resetTime),
+        windowSeconds: 7 * 24 * 60 * 60,
+        usedValue: used,
+        limitValue: limit,
+        showPace: true,
+        limited: used >= limit,
+        nextLabel: "Resets",
+      });
+    }
+  }
+
+  const limits = Array.isArray(data?.limits) ? data.limits : [];
+  for (const entry of limits) {
+    const detail = entry?.detail;
+    const window = entry?.window;
+    if (!detail || !window) continue;
+
+    const limit = Number(detail.limit ?? 0);
+    const used = Number(detail.used ?? 0);
+    const duration = Number(window.duration ?? 0);
+    if (
+      !Number.isFinite(limit) ||
+      !Number.isFinite(used) ||
+      !Number.isFinite(duration) ||
+      limit <= 0 ||
+      duration <= 0
+    ) {
+      continue;
+    }
+
+    let windowSeconds: number;
+    let label: string;
+    switch (window.timeUnit) {
+      case "TIME_UNIT_SECOND":
+        windowSeconds = duration;
+        label = `${duration}s`;
+        break;
+      case "TIME_UNIT_MINUTE":
+        windowSeconds = duration * 60;
+        label =
+          duration % 60 === 0 ? `${duration / 60}h` : `${duration}m`;
+        break;
+      case "TIME_UNIT_HOUR":
+        windowSeconds = duration * 60 * 60;
+        label = `${duration}h`;
+        break;
+      case "TIME_UNIT_DAY":
+        windowSeconds = duration * 24 * 60 * 60;
+        label = `${duration}d`;
+        break;
+      default:
+        continue;
+    }
+    windows.push({
+      provider: "kimi-coding",
+      label,
+      usedPercent: safePercent(used, limit),
+      resetsAt: parseDateish(detail.resetTime),
+      windowSeconds,
+      usedValue: used,
+      limitValue: limit,
+      showPace: false,
+      limited: used >= limit,
+      nextLabel: "Resets",
+    });
+  }
+
+  windows.sort((a, b) => a.windowSeconds - b.windowSeconds);
+  return windows;
+}
+
 // Z.ai (Zhipu AI) GLM Coding Plan quotas.
 //
 // The quota endpoint returns { data: { limits: [...], level } }. Each entry in

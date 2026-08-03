@@ -8,6 +8,7 @@ import {
   parseAnthropicUsage,
   parseCodexUsage,
   parseGitHubCopilotUsage,
+  parseKimiCodingUsage,
   parseOpenRouterUsage,
   parseSyntheticUsage,
   parseZaiUsage,
@@ -442,6 +443,37 @@ export async function fetchOpenCodeGoQuotas(
   return success("opencode-go", parseOpenCodeGoUsage(result));
 }
 
+export async function fetchKimiCodingQuotasWithToken(
+  accessToken: string | undefined,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  if (!accessToken)
+    return failure("No Kimi Code access token found", "config");
+
+  const result = await fetchJson(
+    "https://api.kimi.com/coding/v1/usages",
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    },
+    signal,
+  );
+  if (!result.ok) return failure(result.message, result.kind);
+  return success("kimi-coding", parseKimiCodingUsage(result.data));
+}
+
+export async function fetchKimiCodingQuotas(
+  authStorage: AuthStorage,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  return fetchKimiCodingQuotasWithToken(
+    await providerAccessToken(authStorage, "kimi-coding"),
+    signal,
+  );
+}
+
 export async function fetchZaiQuotasWithToken(
   apiKey: string | undefined,
   signal?: AbortSignal,
@@ -476,4 +508,5 @@ export const PROVIDER_FETCHERS = {
   synthetic: fetchSyntheticQuotas,
   zai: fetchZaiQuotas,
   "opencode-go": fetchOpenCodeGoQuotas,
+  "kimi-coding": fetchKimiCodingQuotas,
 } as const;

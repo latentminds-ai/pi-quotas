@@ -49,4 +49,13 @@ describe("getProviderCommandInfo", () => {
       title: "Z.ai Quotas",
     });
   });
+
+  it("maps kimi-coding to kimi:quotas", () => {
+    const info = getProviderCommandInfo("kimi-coding");
+    expect(info).toMatchObject<Partial<ProviderCommandInfo>>({
+      provider: "kimi-coding",
+      commandName: "kimi:quotas",
+      title: "Kimi Code Quotas",
+    });
+  });
 });

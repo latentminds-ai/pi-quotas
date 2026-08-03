@@ -52,5 +52,11 @@ export function getProviderCommandInfo(
         commandName: "opencode-go:quotas",
         title: "OpenCode Go Quotas",
       };
+    case "kimi-coding":
+      return {
+        provider,
+        commandName: "kimi:quotas",
+        title: "Kimi Code Quotas",
+      };
   }
 }
