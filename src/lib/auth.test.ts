@@ -77,4 +77,20 @@ describe("quotaAuthStorage", () => {
       "resolved-token",
     );
   });
+
+  it("extracts refreshed bearer auth when no API key is exposed", async () => {
+    const getApiKeyForProvider = vi.fn(async () => undefined);
+    const getProviderAuth = vi.fn(async () => ({
+      auth: { headers: { Authorization: "Bearer refreshed-token" } },
+    }));
+    const authStorage = quotaAuthStorage({
+      getApiKeyForProvider,
+      getProviderAuth,
+    });
+
+    await expect(authStorage.getApiKey("kimi-coding")).resolves.toBe(
+      "refreshed-token",
+    );
+    expect(getProviderAuth).toHaveBeenCalledWith("kimi-coding");
+  });
 });

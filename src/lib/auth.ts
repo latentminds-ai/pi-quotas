@@ -8,9 +8,15 @@ import {
 type CompatibleModelRegistry = {
   authStorage?: AuthStorage;
   getApiKeyForProvider?: (provider: string) => Promise<string | undefined>;
-  getProviderAuth?: (
-    provider: string,
-  ) => Promise<{ auth?: { apiKey?: string } } | undefined>;
+  getProviderAuth?: (provider: string) => Promise<
+    | {
+        auth?: {
+          apiKey?: string;
+          headers?: Record<string, string>;
+        };
+      }
+    | undefined
+  >;
 };
 
 function storedCredential(provider: string): unknown {
@@ -41,10 +47,12 @@ export function quotaAuthStorage(
     // token and Codex account id, which resolved provider auth omits.
     get: storedCredential,
     getApiKey: async (provider: string) => {
-      if (modelRegistry.getApiKeyForProvider) {
-        return modelRegistry.getApiKeyForProvider(provider);
-      }
-      return (await modelRegistry.getProviderAuth?.(provider))?.auth?.apiKey;
+      const apiKey = await modelRegistry.getApiKeyForProvider?.(provider);
+      if (apiKey) return apiKey;
+
+      const auth = (await modelRegistry.getProviderAuth?.(provider))?.auth;
+      const authorization = auth?.headers?.Authorization;
+      return auth?.apiKey ?? authorization?.replace(/^Bearer\s+/i, "");
     },
   } as unknown as AuthStorage;
 }
