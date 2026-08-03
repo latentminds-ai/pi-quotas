@@ -15,6 +15,7 @@ const SYNTHETIC_EXTENSIONS_REGISTER_EVENT = "synthetic:extensions:register";
 interface SyntheticExtensionsRegisterPayload {
   feature: string;
 }
+import { quotaAuthStorage } from "../../lib/auth.js";
 import {
   fetchProviderQuotas,
   isSupportedProvider,
@@ -148,7 +149,7 @@ function createStatusRefresher() {
       if (!ctx.hasUI || !activeProvider || !isSupportedProvider(activeProvider)) return;
 
       const provider = activeProvider;
-      const result = await fetchProviderQuotas(ctx.modelRegistry.authStorage, provider);
+      const result = await fetchProviderQuotas(quotaAuthStorage(ctx.modelRegistry), provider);
       if (requestGeneration !== generation || activeContext !== ctx) return;
 
       if (!result.success) {

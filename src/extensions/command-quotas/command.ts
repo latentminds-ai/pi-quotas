@@ -4,6 +4,7 @@ import {
   QUOTAS_EXTENSIONS_REQUEST_EVENT,
   configLoader,
 } from "../../config.js";
+import { quotaAuthStorage } from "../../lib/auth.js";
 import {
   fetchAllProviderQuotas,
   fetchProviderQuotas,
@@ -95,7 +96,7 @@ export function registerQuotasCommands(pi: ExtensionAPI): void {
       }
       await openQuotaView(
         "Provider Quotas",
-        (force, signal) => fetchAllProviderQuotas(ctx.modelRegistry.authStorage, { force, signal }),
+        (force, signal) => fetchAllProviderQuotas(quotaAuthStorage(ctx.modelRegistry), { force, signal }),
         ctx,
       );
     },
@@ -115,7 +116,7 @@ export function registerQuotasCommands(pi: ExtensionAPI): void {
           async (force, signal) => [
             {
               provider,
-              result: await fetchProviderQuotas(ctx.modelRegistry.authStorage, provider, { force, signal }),
+              result: await fetchProviderQuotas(quotaAuthStorage(ctx.modelRegistry), provider, { force, signal }),
             },
           ],
           ctx,

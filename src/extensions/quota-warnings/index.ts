@@ -9,6 +9,7 @@ import {
   type QuotasConfigUpdatedPayload,
   configLoader,
 } from "../../config.js";
+import { quotaAuthStorage } from "../../lib/auth.js";
 import {
   fetchProviderQuotas,
   isSupportedProvider,
@@ -60,7 +61,7 @@ export default async function (pi: ExtensionAPI) {
     lastFetchAt = now;
 
     const result = await fetchProviderQuotas(
-      ctx.modelRegistry.authStorage,
+      quotaAuthStorage(ctx.modelRegistry),
       provider,
     );
     if (!result.success) return;
