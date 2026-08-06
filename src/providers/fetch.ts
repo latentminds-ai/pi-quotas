@@ -391,13 +391,17 @@ export async function fetchOpenRouterQuotas(
 }
 
 export async function fetchSyntheticQuotas(
-  _authStorage: AuthStorage,
+  authStorage: AuthStorage,
   signal?: AbortSignal,
 ): Promise<QuotasResult> {
-  const apiKey = process.env.SYNTHETIC_API_KEY;
+  // Prefer the key stored via `pi /login` (auth.json); fall back to the
+  // SYNTHETIC_API_KEY env var for setups that don't register credentials.
+  const apiKey =
+    (await providerAccessToken(authStorage, "synthetic")) ??
+    process.env.SYNTHETIC_API_KEY;
   if (!apiKey)
     return failure(
-      "No Synthetic API key found (set SYNTHETIC_API_KEY)",
+      "No Synthetic API key found (run `pi /login synthetic` or set SYNTHETIC_API_KEY)",
       "config",
     );
 
