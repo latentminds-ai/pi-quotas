@@ -36,13 +36,11 @@ async function providerAccessToken(
 }
 
 /**
- * Detect a raw Anthropic API key (`sk-ant-...`). OAuth subscription tokens
- * issued by `pi /login` are JWT-shaped (`eyJ...`) or opaque and never carry
- * the `sk-ant-` prefix, so this reliably distinguishes a direct API key that
- * has no OAuth subscription usage to report.
+ * Detect a raw Anthropic API key. OAuth subscription tokens use the
+ * `sk-ant-oat` prefix, while direct API keys use `sk-ant-api`.
  */
 function isDirectAnthropicApiKey(token: string): boolean {
-  return token.startsWith("sk-ant-");
+  return token.startsWith("sk-ant-api");
 }
 
 function codexAccountId(authStorage: AuthStorage): string | undefined {

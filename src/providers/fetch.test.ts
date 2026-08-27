@@ -38,7 +38,7 @@ describe("fetchAnthropicQuotasWithToken", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("fetches and parses quota windows", async () => {
+  it("accepts OAuth tokens and parses quota windows", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -49,7 +49,7 @@ describe("fetchAnthropicQuotasWithToken", () => {
       ),
     ) as any;
 
-    const result = await fetchAnthropicQuotasWithToken("token");
+    const result = await fetchAnthropicQuotasWithToken("sk-ant-oat01-oauth-token");
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.provider).toBe("anthropic");
