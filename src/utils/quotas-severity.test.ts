@@ -4,6 +4,7 @@ import {
   getPacePercent,
   getProjectedPercent,
   getSeverityColor,
+  formatTimeRemaining,
   type QuotaWindow,
   safePercent,
 } from "./quotas-severity.js";
@@ -118,6 +119,13 @@ describe("assessWindow", () => {
     expect(result.pacePercent).toBeLessThan(15);
     expect(result.projectedPercent).toBeGreaterThan(500);
     expect(result.severity).toBe("critical");
+  });
+});
+
+describe("formatTimeRemaining", () => {
+  it("separates adjacent time units", () => {
+    expect(formatTimeRemaining(new Date(Date.now() + (2 * 60 + 19) * 60_000))).toBe("2h 19m");
+    expect(formatTimeRemaining(new Date(Date.now() + (26 * 60 + 19) * 60_000))).toBe("1d 2h 19m");
   });
 });
 

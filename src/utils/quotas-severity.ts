@@ -151,9 +151,9 @@ export function formatTimeRemaining(date: Date): string {
     const parts: string[] = [`${days}d`];
     if (hours > 0) parts.push(`${hours}h`);
     if (mins > 0) parts.push(`${mins}m`);
-    return parts.join("");
+    return parts.join(" ");
   }
-  if (hours >= 1) return mins > 0 ? `${hours}h${mins}m` : `${hours}h`;
+  if (hours >= 1) return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
   const totalSecs = Math.ceil(ms / 1000);
   return totalMins >= 1 ? `${totalMins}m` : `${totalSecs}s`;
 }
