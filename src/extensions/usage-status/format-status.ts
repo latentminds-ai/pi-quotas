@@ -99,7 +99,7 @@ export function formatWindowStatus(theme: ThemeLike, w: WindowStatus): string {
     valueText = theme.fg(color, `${remaining}/${w.limitValue}`);
   } else {
     const remaining = Math.max(0, Math.min(100, Math.round(100 - w.usedPercent)));
-    valueText = theme.fg(color, `${remaining}% left`);
+    valueText = theme.fg(color, `${remaining}%`);
   }
 
   const limitTag = w.limited ? theme.fg("error", " !") : "";
