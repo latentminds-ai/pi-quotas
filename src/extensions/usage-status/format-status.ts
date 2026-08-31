@@ -42,6 +42,11 @@ const SHORT_LABELS: Record<string, string> = {
   "Requests / 5h": "5h",
   "Search / hour": "search",
   "Free Tool Calls / day": "tools",
+  // Antigravity labels
+  Claude: "claude",
+  "Gemini Pro": "g-pro",
+  "Gemini Flash": "g-flash",
+  "GPT-OSS 120B": "gpt-oss",
 };
 
 /**

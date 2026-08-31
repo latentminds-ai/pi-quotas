@@ -9,6 +9,7 @@ import { parseSyntheticUsage } from "./providers.js";
 import { parseXaiUsage } from "./providers.js";
 import { parseZaiUsage } from "./providers.js";
 import { parseOpenCodeGoUsage } from "./providers.js";
+import { parseAntigravityUsage } from "./providers.js";
 
 describe("parseAnthropicUsage", () => {
   it("maps oauth usage response into quota windows", () => {
@@ -974,5 +975,81 @@ describe("parseXaiUsage", () => {
         },
       }),
     ).toEqual([]);
+  });
+});
+
+describe("parseAntigravityUsage", () => {
+  it("maps Google Code Assist models response into quota windows", () => {
+    const windows = parseAntigravityUsage({
+      models: {
+        "claude-opus-4-6-thinking": {
+          displayName: "Claude Opus 4.6 (Thinking)",
+          quotaInfo: {
+            remainingFraction: 0.85,
+            resetTime: "2026-09-01T01:52:45Z",
+          },
+        },
+        "gemini-3.1-pro-low": {
+          displayName: "Gemini 3.1 Pro (Low)",
+          quotaInfo: {
+            remainingFraction: 0.7,
+            resetTime: "2026-09-01T00:17:56Z",
+          },
+        },
+        "gemini-3.6-flash-high": {
+          displayName: "Gemini 3.6 Flash (High)",
+          quotaInfo: {
+            remainingFraction: 0.6,
+            resetTime: "2026-09-01T00:17:56Z",
+          },
+        },
+        "gpt-oss-120b-medium": {
+          displayName: "GPT-OSS 120B (Medium)",
+          quotaInfo: {
+            remainingFraction: 1.0,
+            resetTime: "2026-09-01T01:52:45Z",
+          },
+        },
+      },
+    });
+
+    expect(windows).toHaveLength(4);
+    expect(windows[0]).toMatchObject({
+      provider: "antigravity",
+      label: "Claude",
+      usedPercent: 15,
+      usedValue: 15,
+      limitValue: 100,
+    });
+    expect(windows[0].resetsAt.toISOString()).toBe("2026-09-01T01:52:45.000Z");
+
+    expect(windows[1]).toMatchObject({
+      provider: "antigravity",
+      label: "Gemini Pro",
+      usedPercent: 30,
+      usedValue: 30,
+      limitValue: 100,
+    });
+
+    expect(windows[2]).toMatchObject({
+      provider: "antigravity",
+      label: "Gemini Flash",
+      usedPercent: 40,
+      usedValue: 40,
+      limitValue: 100,
+    });
+
+    expect(windows[3]).toMatchObject({
+      provider: "antigravity",
+      label: "GPT-OSS 120B",
+      usedPercent: 0,
+      usedValue: 0,
+      limitValue: 100,
+    });
+  });
+
+  it("handles empty or missing model quotas gracefully", () => {
+    expect(parseAntigravityUsage({})).toEqual([]);
+    expect(parseAntigravityUsage({ models: {} })).toEqual([]);
   });
 });

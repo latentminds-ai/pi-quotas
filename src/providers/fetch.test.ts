@@ -10,6 +10,7 @@ import {
   fetchOpenRouterQuotasWithToken,
   fetchSyntheticQuotas,
   fetchXaiQuotasWithToken,
+  fetchAntigravityQuotasWithCredentials,
 } from "./fetch.js";
 
 const originalFetch = globalThis.fetch;
@@ -492,6 +493,85 @@ describe("fetchXaiQuotasWithToken", () => {
     expect(result).toMatchObject({
       success: false,
       error: { kind: "http", message: "token rejected" },
+    });
+  });
+});
+
+describe("fetchAntigravityQuotasWithCredentials", () => {
+  it("returns config error when credentials missing", async () => {
+    const result = await fetchAntigravityQuotasWithCredentials({});
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "config" },
+    });
+  });
+
+  it("fetches and parses Google Antigravity quotas", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          models: {
+            "claude-opus-4-6-thinking": {
+              displayName: "Claude Opus 4.6 (Thinking)",
+              quotaInfo: {
+                remainingFraction: 1,
+                resetTime: "2026-09-01T01:52:45Z",
+              },
+            },
+            "gemini-3.1-pro-low": {
+              displayName: "Gemini 3.1 Pro (Low)",
+              quotaInfo: {
+                remainingFraction: 0.7,
+                resetTime: "2026-09-01T00:17:56Z",
+              },
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+    ) as any;
+
+    const result = await fetchAntigravityQuotasWithCredentials({
+      accessToken: "antigravity-token",
+      projectId: "aicode-consumers",
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.provider).toBe("antigravity");
+      expect(result.data.windows).toHaveLength(2);
+      expect(result.data.windows[0]).toMatchObject({
+        label: "Claude",
+        usedPercent: 0,
+      });
+      expect(result.data.windows[1]).toMatchObject({
+        label: "Gemini Pro",
+        usedPercent: 30,
+      });
+    }
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer antigravity-token",
+        }),
+      }),
+    );
+  });
+
+  it("handles HTTP error from fetchAvailableModels", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response("Unauthorized", { status: 401 }),
+    ) as any;
+
+    const result = await fetchAntigravityQuotasWithCredentials({
+      accessToken: "bad-token",
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "http" },
     });
   });
 });
