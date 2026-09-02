@@ -962,6 +962,27 @@ describe("parseXaiUsage", () => {
     });
   });
 
+  it("treats an omitted zero credit percentage as unused quota", () => {
+    const windows = parseXaiUsage({
+      config: {
+        currentPeriod: {
+          type: "USAGE_PERIOD_TYPE_WEEKLY",
+          start: "2026-09-01T17:13:55Z",
+          end: "2026-09-08T17:13:55Z",
+        },
+      },
+    });
+
+    expect(windows).toHaveLength(1);
+    expect(windows[0]).toMatchObject({
+      provider: "xai",
+      label: "Week (credits)",
+      usedPercent: 0,
+      usedValue: 0,
+      limitValue: 100,
+    });
+  });
+
   it("does not manufacture windows from missing or invalid limits", () => {
     expect(parseXaiUsage({})).toEqual([]);
     expect(
