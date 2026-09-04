@@ -664,15 +664,38 @@ export function parseKimiCodingUsage(data: any): QuotaWindow[] {
 // Z.ai (Zhipu AI) GLM Coding Plan quotas.
 //
 // The quota endpoint returns { data: { limits: [...], level } }. Each entry in
-// `limits` is either a TOKENS_LIMIT (token utilisation, reported as a bare
-// `percentage` with no absolute used/limit counts) or a TIME_LIMIT (a monthly
-// count window such as web searches, which does carry real used/limit counts).
+// `limits` is one of:
+//   TOKENS_LIMIT — token utilisation, a bare `percentage` with no counts
+//   CREDIT_LIMIT — prepaid credit windows with real usage/currentValue counts
+//                  (returned instead of TOKENS_LIMIT on credit-based plans)
+//   TIME_LIMIT   — a monthly count window (web search), with real counts
 //
 // The window length is encoded as (unit, number). Observed values:
 //   unit 3 = HOUR  (e.g. the rolling 5-hour session window)
 //   unit 6 = WEEK  (e.g. the rolling 7-day weekly window)
 //   unit 5 = MONTH (TIME_LIMIT only, the monthly count window)
 // Reset times are epoch milliseconds.
+
+// Shared window-shape decoding for z.ai limit entries: (unit, number) pairs
+// map onto a human label and a window length in seconds.
+function zaiWindowShape(
+  unit: unknown,
+  count: number,
+  fallbackLabel: string,
+): { label: string; windowSeconds: number } {
+  switch (unit) {
+    case 3: // HOUR
+      return { label: `${count}h`, windowSeconds: count * 60 * 60 };
+    case 4: // DAY (defensive — not observed, but handled)
+      return { label: `${count}d`, windowSeconds: count * 24 * 60 * 60 };
+    case 6: // WEEK
+      return { label: `${count * 7}d`, windowSeconds: count * 7 * 24 * 60 * 60 };
+    default:
+      // Unknown unit — still surface it so usage is never silently hidden.
+      return { label: fallbackLabel, windowSeconds: 0 };
+  }
+}
+
 export function parseZaiUsage(data: any): QuotaWindow[] {
   const collected: QuotaWindow[] = [];
 
@@ -685,30 +708,12 @@ export function parseZaiUsage(data: any): QuotaWindow[] {
     // Token windows only expose a percentage, so — like Anthropic/Codex — we
     // report usedValue as the percentage against a nominal limit of 100.
     if (entry.type === "TOKENS_LIMIT") {
-      const unit = entry.unit;
       const count = Number(entry.number ?? 1) || 1;
-      let label: string;
-      let windowSeconds: number;
-
-      switch (unit) {
-        case 3: // HOUR
-          label = `${count}h`;
-          windowSeconds = count * 60 * 60;
-          break;
-        case 4: // DAY (defensive — not observed, but handled)
-          label = `${count}d`;
-          windowSeconds = count * 24 * 60 * 60;
-          break;
-        case 6: // WEEK
-          label = `${count * 7}d`;
-          windowSeconds = count * 7 * 24 * 60 * 60;
-          break;
-        default:
-          // Unknown unit — still surface it so usage is never silently hidden.
-          label = "Tokens";
-          windowSeconds = 0;
-          break;
-      }
+      const { label, windowSeconds } = zaiWindowShape(
+        entry.unit,
+        count,
+        "Tokens",
+      );
 
       collected.push({
         provider: "zai",
@@ -718,6 +723,38 @@ export function parseZaiUsage(data: any): QuotaWindow[] {
         windowSeconds,
         usedValue: Number(entry.percentage ?? 0),
         limitValue: 100,
+        showPace: false,
+        nextLabel: "Resets",
+      });
+      continue;
+    }
+
+    // Credit-based GLM Coding Plans (e.g. level "lite") report CREDIT_LIMIT
+    // windows instead of TOKENS_LIMIT: real counts where `usage` is the window
+    // allowance, `currentValue` the credits consumed, plus a rounded
+    // `percentage`. Without this branch such accounts produce zero windows and
+    // are filtered out of the /quotas dashboard entirely.
+    if (entry.type === "CREDIT_LIMIT") {
+      const count = Number(entry.number ?? 1) || 1;
+      const { label, windowSeconds } = zaiWindowShape(
+        entry.unit,
+        count,
+        "Credits",
+      );
+      const limit = Number(entry.usage ?? 0);
+      const used = Number(entry.currentValue ?? 0);
+      const hasCounts = limit > 0;
+
+      collected.push({
+        provider: "zai",
+        label,
+        usedPercent: hasCounts
+          ? safePercent(used, limit)
+          : Number(entry.percentage ?? 0),
+        resetsAt: parseDateish(entry.nextResetTime),
+        windowSeconds,
+        usedValue: hasCounts ? used : Number(entry.percentage ?? 0),
+        limitValue: hasCounts ? limit : 100,
         showPace: false,
         nextLabel: "Resets",
       });

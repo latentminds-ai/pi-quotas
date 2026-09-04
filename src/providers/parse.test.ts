@@ -856,6 +856,105 @@ describe("parseZaiUsage", () => {
     expect(windows[0].label).toBe("5h");
   });
 
+  it("maps CREDIT_LIMIT windows from credit-based plans with real counts", () => {
+    // Observed on a `level: "lite"` GLM Coding Plan, which returns
+    // CREDIT_LIMIT entries instead of TOKENS_LIMIT.
+    const windows = parseZaiUsage({
+      data: {
+        level: "lite",
+        limits: [
+          {
+            type: "CREDIT_LIMIT",
+            unit: 6,
+            number: 1,
+            usage: 10000,
+            currentValue: 740,
+            remaining: 9259,
+            percentage: 7,
+            nextResetTime: 1789128084993,
+          },
+          {
+            type: "CREDIT_LIMIT",
+            unit: 3,
+            number: 5,
+            usage: 2000,
+            currentValue: 740,
+            remaining: 1259,
+            percentage: 37,
+            nextResetTime: 1788541838272,
+          },
+        ],
+      },
+    });
+
+    // Shortest window first: 5h → 7d
+    expect(windows).toHaveLength(2);
+    expect(windows[0]).toMatchObject({
+      provider: "zai",
+      label: "5h",
+      usedPercent: 37,
+      usedValue: 740,
+      limitValue: 2000,
+      windowSeconds: 5 * 60 * 60,
+    });
+    expect(windows[1]).toMatchObject({
+      provider: "zai",
+      label: "7d",
+      usedValue: 740,
+      limitValue: 10000,
+      windowSeconds: 7 * 24 * 60 * 60,
+    });
+    expect(windows[1].usedPercent).toBeCloseTo(7.4, 2);
+  });
+
+  it("falls back to the reported percentage when a credit window has no allowance", () => {
+    const windows = parseZaiUsage({
+      data: {
+        limits: [
+          {
+            type: "CREDIT_LIMIT",
+            unit: 3,
+            number: 5,
+            percentage: 42,
+            nextResetTime: 1788541838272,
+          },
+        ],
+      },
+    });
+    expect(windows).toHaveLength(1);
+    expect(windows[0]).toMatchObject({
+      label: "5h",
+      usedPercent: 42,
+      usedValue: 42,
+      limitValue: 100,
+    });
+  });
+
+  it("surfaces credit windows with an unknown unit instead of dropping them", () => {
+    const windows = parseZaiUsage({
+      data: {
+        limits: [
+          {
+            type: "CREDIT_LIMIT",
+            unit: 99,
+            number: 1,
+            usage: 500,
+            currentValue: 250,
+            percentage: 50,
+          },
+        ],
+      },
+    });
+    expect(windows).toHaveLength(1);
+    expect(windows[0]).toMatchObject({
+      label: "Credits",
+      usedPercent: 50,
+      usedValue: 250,
+      limitValue: 500,
+      windowSeconds: 0,
+    });
+  });
+
   it("returns empty array when there are no limits", () => {
     expect(parseZaiUsage({})).toHaveLength(0);
     expect(parseZaiUsage({ data: {} })).toHaveLength(0);
