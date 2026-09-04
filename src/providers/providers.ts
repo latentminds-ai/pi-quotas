@@ -673,7 +673,10 @@ export function parseKimiCodingUsage(data: any): QuotaWindow[] {
 //   unit 6 = WEEK  (e.g. the rolling 7-day weekly window)
 //   unit 5 = MONTH (TIME_LIMIT only, the monthly count window)
 // Reset times are epoch milliseconds.
-export function parseZaiUsage(data: any): QuotaWindow[] {
+export function parseZaiUsage(
+  data: any,
+  provider: "zai" | "zai-coding" | "zai-coding-cn" = "zai",
+): QuotaWindow[] {
   const collected: QuotaWindow[] = [];
 
   const limits: any[] = data?.data?.limits ?? data?.limits ?? [];
@@ -711,7 +714,7 @@ export function parseZaiUsage(data: any): QuotaWindow[] {
       }
 
       collected.push({
-        provider: "zai",
+        provider,
         label,
         usedPercent: Number(entry.percentage ?? 0),
         resetsAt: parseDateish(entry.nextResetTime),
@@ -732,7 +735,7 @@ export function parseZaiUsage(data: any): QuotaWindow[] {
       if (limit <= 0) continue;
 
       collected.push({
-        provider: "zai",
+        provider,
         label: "Web / month",
         usedPercent: safePercent(used, limit),
         resetsAt: parseDateish(entry.nextResetTime),
@@ -748,6 +751,18 @@ export function parseZaiUsage(data: any): QuotaWindow[] {
   // Shortest window first (5h → 7d → month), matching Anthropic/Codex order.
   collected.sort((a, b) => a.windowSeconds - b.windowSeconds);
   return collected;
+}
+
+// Z.ai Coding (international) shares Z.ai's quota API and response schema,
+// so it reuses the Z.ai parser under a different provider id.
+export function parseZaiCodingUsage(data: any): QuotaWindow[] {
+  return parseZaiUsage(data, "zai-coding");
+}
+
+// Z.ai Coding CN (Zhipu GLM Coding Plan on the bigmodel.cn platform) uses
+// the same response schema as the international endpoint.
+export function parseZaiCodingCnUsage(data: any): QuotaWindow[] {
+  return parseZaiUsage(data, "zai-coding-cn");
 }
 
 // Ollama Cloud subscription quotas. The undocumented /api/usage endpoint

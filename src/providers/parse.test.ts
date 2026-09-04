@@ -8,6 +8,8 @@ import { parseOpenRouterUsage } from "./providers.js";
 import { parseSyntheticUsage } from "./providers.js";
 import { parseXaiUsage } from "./providers.js";
 import { parseZaiUsage } from "./providers.js";
+import { parseZaiCodingUsage } from "./providers.js";
+import { parseZaiCodingCnUsage } from "./providers.js";
 import { parseOpenCodeGoUsage } from "./providers.js";
 
 describe("parseAnthropicUsage", () => {
@@ -860,6 +862,29 @@ describe("parseZaiUsage", () => {
     expect(parseZaiUsage({})).toHaveLength(0);
     expect(parseZaiUsage({ data: {} })).toHaveLength(0);
     expect(parseZaiUsage({ data: { limits: [] } })).toHaveLength(0);
+  });
+});
+
+describe("parseZaiCodingUsage / parseZaiCodingCnUsage", () => {
+  const payload = {
+    data: {
+      limits: [
+        { type: "TOKENS_LIMIT", unit: 3, number: 5, percentage: 8, nextResetTime: 1782932874304 },
+        { type: "TOKENS_LIMIT", unit: 6, number: 1, percentage: 52, nextResetTime: 1783061170994 },
+      ],
+    },
+  };
+
+  it("reuses the Z.ai schema under the zai-coding provider id", () => {
+    const windows = parseZaiCodingUsage(payload);
+    expect(windows.map((w) => w.provider)).toEqual(["zai-coding", "zai-coding"]);
+    expect(windows.map((w) => w.label)).toEqual(["5h", "7d"]);
+  });
+
+  it("reuses the Z.ai schema under the zai-coding-cn provider id", () => {
+    const windows = parseZaiCodingCnUsage(payload);
+    expect(windows.map((w) => w.provider)).toEqual(["zai-coding-cn", "zai-coding-cn"]);
+    expect(windows.map((w) => w.label)).toEqual(["5h", "7d"]);
   });
 });
 

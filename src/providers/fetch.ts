@@ -14,6 +14,8 @@ import {
   parseSyntheticUsage,
   parseXaiUsage,
   parseZaiUsage,
+  parseZaiCodingUsage,
+  parseZaiCodingCnUsage,
   parseOpenCodeGoUsage,
 } from "./providers.js";
 import { resolveOpenCodeGoConfigCached } from "./opencode-go-config.js";
@@ -504,6 +506,68 @@ export async function fetchZaiQuotas(
   return fetchZaiQuotasWithToken(await providerAccessToken(authStorage, "zai"), signal);
 }
 
+// Z.ai Coding (international GLM Coding Plan) shares Z.ai's quota endpoint
+// and response schema; only the stored provider credential differs.
+export async function fetchZaiCodingQuotasWithToken(
+  apiKey: string | undefined,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  if (!apiKey) return failure("No Z.ai Coding API key found", "config");
+  const result = await fetchJson(
+    "https://api.z.ai/api/monitor/usage/quota/limit",
+    {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    },
+    signal,
+  );
+  if (!result.ok) return failure(result.message, result.kind);
+  return success("zai-coding", parseZaiCodingUsage(result.data));
+}
+
+export async function fetchZaiCodingQuotas(
+  authStorage: AuthStorage,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  return fetchZaiCodingQuotasWithToken(
+    await providerAccessToken(authStorage, "zai-coding"),
+    signal,
+  );
+}
+
+// Z.ai Coding CN queries the Zhipu (bigmodel.cn) platform, which mirrors the
+// international quota API under the same path.
+export async function fetchZaiCodingCnQuotasWithToken(
+  apiKey: string | undefined,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  if (!apiKey) return failure("No Z.ai Coding CN API key found", "config");
+  const result = await fetchJson(
+    "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+    {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    },
+    signal,
+  );
+  if (!result.ok) return failure(result.message, result.kind);
+  return success("zai-coding-cn", parseZaiCodingCnUsage(result.data));
+}
+
+export async function fetchZaiCodingCnQuotas(
+  authStorage: AuthStorage,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  return fetchZaiCodingCnQuotasWithToken(
+    await providerAccessToken(authStorage, "zai-coding-cn"),
+    signal,
+  );
+}
+
 export async function fetchOllamaCloudQuotasWithToken(
   apiKey: string | undefined,
   signal?: AbortSignal,
@@ -571,6 +635,8 @@ export const PROVIDER_FETCHERS = {
   synthetic: fetchSyntheticQuotas,
   xai: fetchXaiQuotas,
   zai: fetchZaiQuotas,
+  "zai-coding": fetchZaiCodingQuotas,
+  "zai-coding-cn": fetchZaiCodingCnQuotas,
   "opencode-go": fetchOpenCodeGoQuotas,
   "kimi-coding": fetchKimiCodingQuotas,
   "ollama-cloud": fetchOllamaCloudQuotas,
