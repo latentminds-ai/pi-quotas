@@ -844,6 +844,74 @@ describe("parseZaiUsage", () => {
     });
   });
 
+  it("maps CREDIT_LIMIT windows with real used/entitlement counts", () => {
+    // Real response shape observed from both api.z.ai and open.bigmodel.cn
+    // (level "max" account): rolling 5h/7d credit windows.
+    const windows = parseZaiUsage({
+      data: {
+        level: "max",
+        limits: [
+          {
+            type: "CREDIT_LIMIT",
+            unit: 3,
+            number: 5,
+            usage: 28000,
+            currentValue: 649,
+            remaining: 27350,
+            percentage: 2,
+            nextResetTime: 1788512809486,
+          },
+          {
+            type: "CREDIT_LIMIT",
+            unit: 6,
+            number: 1,
+            usage: 140000,
+            currentValue: 649,
+            remaining: 139350,
+            percentage: 1,
+            nextResetTime: 1789099098991,
+          },
+        ],
+      },
+    });
+
+    expect(windows).toHaveLength(2);
+    expect(windows[0]).toMatchObject({
+      provider: "zai",
+      label: "5h",
+      usedPercent: 2,
+      usedValue: 649,
+      limitValue: 28000,
+      windowSeconds: 5 * 60 * 60,
+    });
+    expect(windows[1]).toMatchObject({
+      provider: "zai",
+      label: "7d",
+      usedPercent: 1,
+      usedValue: 649,
+      limitValue: 140000,
+      windowSeconds: 7 * 24 * 60 * 60,
+    });
+  });
+
+  it("computes CREDIT_LIMIT percentage from counts when absent", () => {
+    const windows = parseZaiUsage({
+      data: {
+        limits: [
+          {
+            type: "CREDIT_LIMIT",
+            unit: 3,
+            number: 5,
+            usage: 200,
+            currentValue: 50,
+            nextResetTime: 1788512809486,
+          },
+        ],
+      },
+    });
+    expect(windows[0]).toMatchObject({ usedPercent: 25, usedValue: 50, limitValue: 200 });
+  });
+
   it("skips the monthly window when the entitlement is zero", () => {
     const windows = parseZaiUsage({
       data: {

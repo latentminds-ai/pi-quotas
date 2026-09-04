@@ -664,15 +664,40 @@ export function parseKimiCodingUsage(data: any): QuotaWindow[] {
 // Z.ai (Zhipu AI) GLM Coding Plan quotas.
 //
 // The quota endpoint returns { data: { limits: [...], level } }. Each entry in
-// `limits` is either a TOKENS_LIMIT (token utilisation, reported as a bare
-// `percentage` with no absolute used/limit counts) or a TIME_LIMIT (a monthly
-// count window such as web searches, which does carry real used/limit counts).
+// `limits` is one of:
+//   - TOKENS_LIMIT — token utilisation, reported as a bare `percentage` with
+//     no absolute used/limit counts
+//   - CREDIT_LIMIT — a credit window with real counts (`usage` is the
+//     entitlement, `currentValue` what's been used) plus a `percentage`.
+//     This is what current accounts return for the 5h/7d windows.
+//   - TIME_LIMIT — a monthly count window such as web searches, which also
+//     carries real used/limit counts.
 //
 // The window length is encoded as (unit, number). Observed values:
 //   unit 3 = HOUR  (e.g. the rolling 5-hour session window)
 //   unit 6 = WEEK  (e.g. the rolling 7-day weekly window)
 //   unit 5 = MONTH (TIME_LIMIT only, the monthly count window)
 // Reset times are epoch milliseconds.
+function zaiWindowShape(
+  unit: unknown,
+  count: number,
+): { label: string; windowSeconds: number } {
+  switch (unit) {
+    case 3: // HOUR
+      return { label: `${count}h`, windowSeconds: count * 60 * 60 };
+    case 4: // DAY (defensive — not observed, but handled)
+      return { label: `${count}d`, windowSeconds: count * 24 * 60 * 60 };
+    case 6: // WEEK
+      return {
+        label: `${count * 7}d`,
+        windowSeconds: count * 7 * 24 * 60 * 60,
+      };
+    default:
+      // Unknown unit — still surface it so usage is never silently hidden.
+      return { label: "Tokens", windowSeconds: 0 };
+  }
+}
+
 export function parseZaiUsage(
   data: any,
   provider: "zai" | "zai-coding-cn" = "zai",
@@ -685,42 +710,33 @@ export function parseZaiUsage(
   for (const entry of limits) {
     if (!entry || typeof entry !== "object") continue;
 
-    // Token windows only expose a percentage, so — like Anthropic/Codex — we
-    // report usedValue as the percentage against a nominal limit of 100.
-    if (entry.type === "TOKENS_LIMIT") {
-      const unit = entry.unit;
+    // Rolling token/credit windows (5h / 7d).
+    if (entry.type === "TOKENS_LIMIT" || entry.type === "CREDIT_LIMIT") {
+      const isCredits = entry.type === "CREDIT_LIMIT";
       const count = Number(entry.number ?? 1) || 1;
-      let label: string;
-      let windowSeconds: number;
+      const { label, windowSeconds } = zaiWindowShape(entry.unit, count);
 
-      switch (unit) {
-        case 3: // HOUR
-          label = `${count}h`;
-          windowSeconds = count * 60 * 60;
-          break;
-        case 4: // DAY (defensive — not observed, but handled)
-          label = `${count}d`;
-          windowSeconds = count * 24 * 60 * 60;
-          break;
-        case 6: // WEEK
-          label = `${count * 7}d`;
-          windowSeconds = count * 7 * 24 * 60 * 60;
-          break;
-        default:
-          // Unknown unit — still surface it so usage is never silently hidden.
-          label = "Tokens";
-          windowSeconds = 0;
-          break;
-      }
+      // TOKENS_LIMIT only exposes a percentage, so — like Anthropic/Codex —
+      // we report usedValue as the percentage against a nominal limit of 100.
+      // CREDIT_LIMIT carries real counts, so we show used credits against
+      // the entitlement instead.
+      const usedPercent = isCredits
+        ? Number(
+          entry.percentage ??
+              safePercent(entry.currentValue ?? 0, entry.usage ?? 0),
+        )
+        : Number(entry.percentage ?? 0);
 
       collected.push({
         provider,
         label,
-        usedPercent: Number(entry.percentage ?? 0),
+        usedPercent,
         resetsAt: parseDateish(entry.nextResetTime),
         windowSeconds,
-        usedValue: Number(entry.percentage ?? 0),
-        limitValue: 100,
+        usedValue: isCredits
+          ? Number(entry.currentValue ?? 0)
+          : usedPercent,
+        limitValue: isCredits ? Number(entry.usage ?? 0) : 100,
         showPace: false,
         nextLabel: "Resets",
       });
