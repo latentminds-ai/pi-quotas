@@ -1,6 +1,6 @@
 # @latentminds/pi-quotas
 
-Quota monitoring for Pi. Shows remaining usage and rate limits for Anthropic, OpenAI Codex, GitHub Copilot, OpenRouter, Synthetic, Grok, Z.ai, Z.ai Coding (international + CN), OpenCode Go, Kimi Code, and Ollama Cloud — directly in your Pi session.
+Quota monitoring for Pi. Shows remaining usage and rate limits for Anthropic, OpenAI Codex, GitHub Copilot, OpenRouter, Synthetic, Grok, Z.ai, Z.ai Coding CN, OpenCode Go, Kimi Code, and Ollama Cloud — directly in your Pi session.
 
 ## Screenshots
 
@@ -44,8 +44,7 @@ pi -e npm:@latentminds/pi-quotas
 | `/synthetic:quotas`  | Synthetic quotas only                      |
 | `/grok:quotas`       | Grok quotas only                           |
 | `/zai:quotas`        | Z.ai quotas only                           |
-| `/zai-coding:quotas` | Z.ai Coding (international) quotas only    |
-| `/zai-coding-cn:quotas` | Z.ai Coding (CN) quotas only            |
+| `/zai-coding-cn:quotas` | Z.ai Coding CN (bigmodel.cn) quotas only |
 | `/opencode-go:quotas`| OpenCode Go quotas only                    |
 | `/kimi:quotas`       | Kimi Code quotas only                      |
 | `/ollama:quotas`     | Ollama Cloud quotas only                   |
@@ -74,7 +73,7 @@ Automatic notifications when projected usage is on track to exceed limits before
 Use `/quotas:settings` to enable or disable:
 
 - Combined `/quotas` command
-- Per-provider commands (`/anthropic:quotas`, `/codex:quotas`, `/github:quotas`, `/openrouter:quotas`, `/synthetic:quotas`, `/grok:quotas`, `/zai:quotas`, `/zai-coding:quotas`, `/zai-coding-cn:quotas`, `/opencode-go:quotas`, `/kimi:quotas`, `/ollama:quotas`)
+- Per-provider commands (`/anthropic:quotas`, `/codex:quotas`, `/github:quotas`, `/openrouter:quotas`, `/synthetic:quotas`, `/grok:quotas`, `/zai:quotas`, `/zai-coding-cn:quotas`, `/opencode-go:quotas`, `/kimi:quotas`, `/ollama:quotas`)
 - Footer status widget
 - Quota warning notifications
 - **Defer to Synthetic** — when both pi-quotas and [pi-synthetic](https://www.npmjs.com/package/@aliou/pi-synthetic) are loaded, pi-quotas hides its own Synthetic footer to avoid showing duplicate quota information. Enabled by default; disable if you prefer to see both footers.
@@ -93,7 +92,6 @@ Settings can be saved globally (`~/.pi/agent/extensions/quotas.json`) or per-pro
 | Synthetic      | Subscription, search/hour, free tools, weekly tokens, 5h limit | Request counts and token budgets; rolling five-hour rate limit; weekly token regen                  |
 | Grok           | Weekly credits, per-product usage, on-demand spend              | SuperGrok credit usage from the xAI CLI billing endpoint                                             |
 | Z.ai           | 5h, 7d, monthly web searches                                  | Token utilisation percentages (rolling 5h/7d windows); monthly web-search count limit               |
-| Z.ai Coding    | 5h, 7d, monthly web searches                                  | GLM Coding Plan via the international `api.z.ai` quota endpoint                                     |
 | Z.ai Coding CN | 5h, 7d, monthly web searches                                  | GLM Coding Plan via the Zhipu `open.bigmodel.cn` quota endpoint                                     |
 | OpenCode Go    | Rolling 5h, weekly, monthly USD                              | USD spend tracking against tier limits; cross-session token/cost aggregation via the `/tokens` command |
 | Kimi Code      | Rolling 5h, weekly                                           | Coding Plan request allowances with reset times                                                        |
@@ -110,9 +108,8 @@ pi-quotas reads existing Pi auth entries from `~/.pi/agent/auth.json`:
 - `openrouter` — OpenRouter API key (Bearer token)
 - `synthetic` — Synthetic API key (set the `SYNTHETIC_API_KEY` environment variable)
 - `xai` — Grok/xAI OAuth access token
-- `zai` — Z.ai (Zhipu AI / GLM Coding Plan) API key
-- `zai-coding` — Z.ai Coding (international GLM Coding Plan) API key
-- `zai-coding-cn` — Z.ai Coding CN (Zhipu GLM Coding Plan on bigmodel.cn) API key
+- `zai` — Z.ai (international GLM Coding Plan) API key
+- `zai-coding-cn` — Z.ai Coding CN (Zhipu GLM Coding Plan on bigmodel.cn) API key (falls back to the `ZAI_CODING_CN_API_KEY` environment variable)
 - `opencode-go` — OpenCode Go workspace ID and auth cookie (set the `OPENCODE_GO_WORKSPACE_ID` and `OPENCODE_GO_AUTH_COOKIE` environment variables, or configure them in the OpenCode Go config file)
 - `kimi-coding` — Kimi Code OAuth access token
 - `ollama-cloud` — Ollama Cloud API key (also reads `OLLAMA_API_KEY` if set)

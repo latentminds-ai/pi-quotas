@@ -675,7 +675,7 @@ export function parseKimiCodingUsage(data: any): QuotaWindow[] {
 // Reset times are epoch milliseconds.
 export function parseZaiUsage(
   data: any,
-  provider: "zai" | "zai-coding" | "zai-coding-cn" = "zai",
+  provider: "zai" | "zai-coding-cn" = "zai",
 ): QuotaWindow[] {
   const collected: QuotaWindow[] = [];
 
@@ -753,14 +753,9 @@ export function parseZaiUsage(
   return collected;
 }
 
-// Z.ai Coding (international) shares Z.ai's quota API and response schema,
-// so it reuses the Z.ai parser under a different provider id.
-export function parseZaiCodingUsage(data: any): QuotaWindow[] {
-  return parseZaiUsage(data, "zai-coding");
-}
-
 // Z.ai Coding CN (Zhipu GLM Coding Plan on the bigmodel.cn platform) uses
-// the same response schema as the international endpoint.
+// the same response schema as the international Z.ai endpoint, so it reuses
+// the Z.ai parser under a different provider id.
 export function parseZaiCodingCnUsage(data: any): QuotaWindow[] {
   return parseZaiUsage(data, "zai-coding-cn");
 }

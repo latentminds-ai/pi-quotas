@@ -59,21 +59,12 @@ describe("getProviderCommandInfo", () => {
     });
   });
 
-  it("maps zai-coding to zai-coding:quotas", () => {
-    const info = getProviderCommandInfo("zai-coding");
-    expect(info).toMatchObject<Partial<ProviderCommandInfo>>({
-      provider: "zai-coding",
-      commandName: "zai-coding:quotas",
-      title: "Z.ai Coding Quotas",
-    });
-  });
-
   it("maps zai-coding-cn to zai-coding-cn:quotas", () => {
     const info = getProviderCommandInfo("zai-coding-cn");
     expect(info).toMatchObject<Partial<ProviderCommandInfo>>({
       provider: "zai-coding-cn",
       commandName: "zai-coding-cn:quotas",
-      title: "Z.ai Coding (CN) Quotas",
+      title: "Z.ai Coding CN Quotas",
     });
   });
 
