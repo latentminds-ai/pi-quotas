@@ -716,16 +716,23 @@ export function parseZaiUsage(
       const count = Number(entry.number ?? 1) || 1;
       const { label, windowSeconds } = zaiWindowShape(entry.unit, count);
 
-      // TOKENS_LIMIT only exposes a percentage, so — like Anthropic/Codex —
-      // we report usedValue as the percentage against a nominal limit of 100.
-      // CREDIT_LIMIT carries real counts, so we show used credits against
-      // the entitlement instead.
-      const usedPercent = isCredits
-        ? Number(
-          entry.percentage ??
-              safePercent(entry.currentValue ?? 0, entry.usage ?? 0),
-        )
-        : Number(entry.percentage ?? 0);
+      // Both variants are rendered as percentage-only windows ("N% left"),
+      // like Anthropic/Codex. TOKENS_LIMIT only exposes the API's percentage;
+      // CREDIT_LIMIT carries real counts, so we compute a precise percentage
+      // from them (the API's own `percentage` is a floored integer) and
+      // surface the raw counts as supplementary detail in the subtitle —
+      // five-digit credit counts are unreadable as the primary display.
+      let usedPercent: number;
+      let nextAmount: string | undefined;
+      if (isCredits) {
+        const used = Number(entry.currentValue ?? 0);
+        const limit = Number(entry.usage ?? 0);
+        usedPercent =
+          limit > 0 ? safePercent(used, limit) : Number(entry.percentage ?? 0);
+        if (limit > 0) nextAmount = `${used}/${limit} credits used`;
+      } else {
+        usedPercent = Number(entry.percentage ?? 0);
+      }
 
       collected.push({
         provider,
@@ -733,11 +740,10 @@ export function parseZaiUsage(
         usedPercent,
         resetsAt: parseDateish(entry.nextResetTime),
         windowSeconds,
-        usedValue: isCredits
-          ? Number(entry.currentValue ?? 0)
-          : usedPercent,
-        limitValue: isCredits ? Number(entry.usage ?? 0) : 100,
+        usedValue: usedPercent,
+        limitValue: 100,
         showPace: false,
+        nextAmount,
         nextLabel: "Resets",
       });
       continue;

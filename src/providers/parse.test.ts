@@ -879,19 +879,40 @@ describe("parseZaiUsage", () => {
     expect(windows[0]).toMatchObject({
       provider: "zai",
       label: "5h",
-      usedPercent: 2,
-      usedValue: 649,
-      limitValue: 28000,
       windowSeconds: 5 * 60 * 60,
+      limitValue: 100,
+      nextAmount: "649/28000 credits used",
     });
+    // Precise percentage computed from counts (649/28000), not the API's
+    // floored integer `percentage: 2`.
+    expect(windows[0].usedPercent).toBeCloseTo(2.32, 1);
+    expect(windows[0].usedValue).toBeCloseTo(2.32, 1);
     expect(windows[1]).toMatchObject({
       provider: "zai",
       label: "7d",
-      usedPercent: 1,
-      usedValue: 649,
-      limitValue: 140000,
       windowSeconds: 7 * 24 * 60 * 60,
+      limitValue: 100,
+      nextAmount: "649/140000 credits used",
     });
+    expect(windows[1].usedPercent).toBeCloseTo(0.46, 2);
+  });
+
+  it("falls back to the API percentage for CREDIT_LIMIT without counts", () => {
+    const windows = parseZaiUsage({
+      data: {
+        limits: [
+          {
+            type: "CREDIT_LIMIT",
+            unit: 3,
+            number: 5,
+            percentage: 7,
+            nextResetTime: 1788512809486,
+          },
+        ],
+      },
+    });
+    expect(windows[0]).toMatchObject({ usedPercent: 7, usedValue: 7, limitValue: 100 });
+    expect(windows[0].nextAmount).toBeUndefined();
   });
 
   it("computes CREDIT_LIMIT percentage from counts when absent", () => {
@@ -909,7 +930,7 @@ describe("parseZaiUsage", () => {
         ],
       },
     });
-    expect(windows[0]).toMatchObject({ usedPercent: 25, usedValue: 50, limitValue: 200 });
+    expect(windows[0]).toMatchObject({ usedPercent: 25, usedValue: 25, limitValue: 100, nextAmount: "50/200 credits used" });
   });
 
   it("skips the monthly window when the entitlement is zero", () => {
