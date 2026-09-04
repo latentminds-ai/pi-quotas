@@ -10,6 +10,7 @@ import {
   fetchOpenRouterQuotasWithToken,
   fetchSyntheticQuotas,
   fetchXaiQuotasWithToken,
+  fetchZaiCodingCnQuotasWithToken,
 } from "./fetch.js";
 
 const originalFetch = globalThis.fetch;
@@ -240,6 +241,63 @@ describe("fetchKimiCodingQuotasWithToken", () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: "Bearer kimi-token",
+        }),
+      }),
+    );
+  });
+});
+
+describe("fetchZaiCodingCnQuotasWithToken", () => {
+  it("returns config error when API key missing", async () => {
+    const result = await fetchZaiCodingCnQuotasWithToken(undefined);
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "config" },
+    });
+  });
+
+  it("fetches and parses Z.ai Coding CN subscription windows", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 200,
+          success: true,
+          data: {
+            limits: [
+              {
+                type: "CREDIT_LIMIT",
+                unit: 3,
+                number: 5,
+                usage: 2000,
+                currentValue: 100,
+                remaining: 1900,
+                percentage: 5,
+                nextResetTime: 1788512809486,
+              },
+            ],
+          },
+        }),
+        { status: 200 },
+      ),
+    ) as any;
+
+    const result = await fetchZaiCodingCnQuotasWithToken("zai-cn-key");
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.provider).toBe("zai-coding-cn");
+      expect(result.data.windows).toHaveLength(1);
+      expect(result.data.windows[0]).toMatchObject({
+        provider: "zai-coding-cn",
+        label: "5h",
+        usedPercent: 5,
+      });
+    }
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer zai-cn-key",
         }),
       }),
     );
