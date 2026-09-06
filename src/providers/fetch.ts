@@ -574,9 +574,13 @@ export const ANTIGRAVITY_CLIENT_SECRET =
   process.env.ANTIGRAVITY_CLIENT_SECRET ||
   atob("R09DU1BYLUs1OEZXUjQ" + "4NkxkTEoxbUxCOHNYQzR6NnFEQWY=");
 
-const ANTIGRAVITY_FETCH_MODELS_URL =
-  "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
-const ANTIGRAVITY_USER_AGENT = "antigravity/1.11.9 darwin/arm64";
+export const ANTIGRAVITY_ENDPOINTS = [
+  "https://daily-cloudcode-pa.googleapis.com",
+  "https://daily-cloudcode-pa.sandbox.googleapis.com",
+  "https://cloudcode-pa.googleapis.com",
+];
+export const ANTIGRAVITY_USER_AGENT =
+  "antigravity/cli/1.1.23 (aidev_client; os_type=linux; arch=amd64; cl=974125021; auth_method=consumer)";
 
 export async function refreshAntigravityToken(
   refreshToken: string,
@@ -741,49 +745,102 @@ export async function fetchAntigravityQuotasWithCredentials(
     );
   }
 
-  let result = await fetchJson(
-    ANTIGRAVITY_FETCH_MODELS_URL,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-        "User-Agent": ANTIGRAVITY_USER_AGENT,
-      },
-      body: JSON.stringify({ project: projectId }),
-    },
-    signal,
-  );
+  const endpoints = process.env.ANTIGRAVITY_ENDPOINT
+    ? [
+      process.env.ANTIGRAVITY_ENDPOINT,
+      ...ANTIGRAVITY_ENDPOINTS.filter(
+        (e) => e !== process.env.ANTIGRAVITY_ENDPOINT,
+      ),
+    ]
+    : ANTIGRAVITY_ENDPOINTS;
 
-  if (
-    !result.ok &&
-    (result.status === 401 || result.status === 403) &&
-    refreshToken
-  ) {
-    // Retry once with a fresh token
+  let refreshed = false;
+  const ensureFreshToken = async (): Promise<boolean> => {
+    if (refreshed || !refreshToken) return false;
     const refresh = await refreshAntigravityToken(refreshToken, signal);
     if (refresh.ok) {
       accessToken = refresh.accessToken;
       const expiresAt = Date.now() + (refresh.expiresIn ?? 3600) * 1000;
       antigravityTokenCache.set(refreshToken, { accessToken, expiresAt });
-      result = await fetchJson(
-        ANTIGRAVITY_FETCH_MODELS_URL,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-            "User-Agent": ANTIGRAVITY_USER_AGENT,
-          },
-          body: JSON.stringify({ project: projectId }),
+      refreshed = true;
+      return true;
+    }
+    return false;
+  };
+
+  const postRpc = async (endpoint: string, rpc: string) => {
+    const url = `${endpoint}/v1internal:${rpc}`;
+    let res = await fetchJson(
+      url,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+          "User-Agent": ANTIGRAVITY_USER_AGENT,
         },
-        signal,
-      );
+        body: JSON.stringify({ project: projectId }),
+      },
+      signal,
+    );
+
+    if (!res.ok && (res.status === 401 || res.status === 403) && !refreshed) {
+      const didRefresh = await ensureFreshToken();
+      if (didRefresh) {
+        res = await fetchJson(
+          url,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+              "User-Agent": ANTIGRAVITY_USER_AGENT,
+            },
+            body: JSON.stringify({ project: projectId }),
+          },
+          signal,
+        );
+      }
+    }
+
+    return res;
+  };
+
+  let lastError: { message: string; kind: any } | undefined;
+
+  // 1. Primary: retrieveUserQuotaSummary across endpoints
+  for (const endpoint of endpoints) {
+    const summaryRes = await postRpc(endpoint, "retrieveUserQuotaSummary");
+    if (
+      summaryRes.ok &&
+      Array.isArray(summaryRes.data?.groups) &&
+      summaryRes.data.groups.length > 0
+    ) {
+      return success("antigravity", parseAntigravityUsage(summaryRes.data));
+    }
+    if (!summaryRes.ok) {
+      lastError = { message: summaryRes.message, kind: summaryRes.kind };
     }
   }
 
-  if (!result.ok) return failure(result.message, result.kind);
-  return success("antigravity", parseAntigravityUsage(result.data));
+  // 2. Fallback: fetchAvailableModels across endpoints (e.g. free tier or older API)
+  for (const endpoint of endpoints) {
+    const modelsRes = await postRpc(endpoint, "fetchAvailableModels");
+    if (modelsRes.ok && modelsRes.data?.models) {
+      const windows = parseAntigravityUsage(modelsRes.data);
+      if (windows.length > 0) {
+        return success("antigravity", windows);
+      }
+    }
+    if (!modelsRes.ok) {
+      lastError = { message: modelsRes.message, kind: modelsRes.kind };
+    }
+  }
+
+  if (lastError) {
+    return failure(lastError.message, lastError.kind);
+  }
+  return failure("No Antigravity quota information available", "http");
 }
 
 export async function fetchAntigravityQuotas(

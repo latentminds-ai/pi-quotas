@@ -506,30 +506,104 @@ describe("fetchAntigravityQuotasWithCredentials", () => {
     });
   });
 
-  it("fetches and parses Google Antigravity quotas", async () => {
+  it("fetches and parses Google Antigravity quotas via retrieveUserQuotaSummary", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          models: {
-            "claude-opus-4-6-thinking": {
-              displayName: "Claude Opus 4.6 (Thinking)",
-              quotaInfo: {
-                remainingFraction: 1,
-                resetTime: "2026-09-01T01:52:45Z",
-              },
+          groups: [
+            {
+              displayName: "Gemini Models",
+              buckets: [
+                {
+                  bucketId: "gemini-5h",
+                  window: "5h",
+                  resetTime: "2026-09-01T00:17:56Z",
+                  remainingFraction: 0.7,
+                },
+                {
+                  bucketId: "gemini-weekly",
+                  window: "weekly",
+                  resetTime: "2026-09-05T00:17:56Z",
+                  remainingFraction: 0.5,
+                },
+              ],
             },
-            "gemini-3.1-pro-low": {
-              displayName: "Gemini 3.1 Pro (Low)",
-              quotaInfo: {
-                remainingFraction: 0.7,
-                resetTime: "2026-09-01T00:17:56Z",
-              },
-            },
-          },
+          ],
         }),
         { status: 200 },
       ),
     ) as any;
+
+    const result = await fetchAntigravityQuotasWithCredentials({
+      accessToken: "antigravity-token",
+      projectId: "aicode-consumers",
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.provider).toBe("antigravity");
+      expect(result.data.windows).toHaveLength(2);
+      expect(result.data.windows[0]).toMatchObject({
+        label: "Gemini (5h)",
+        usedPercent: 30,
+      });
+      expect(result.data.windows[1]).toMatchObject({
+        label: "Gemini (Weekly)",
+        usedPercent: 50,
+      });
+    }
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer antigravity-token",
+        }),
+      }),
+    );
+  });
+
+  it("falls back to fetchAvailableModels when retrieveUserQuotaSummary has no groups", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "SUBSCRIPTION_REQUIRED" }), {
+          status: 403,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "SUBSCRIPTION_REQUIRED" }), {
+          status: 403,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "SUBSCRIPTION_REQUIRED" }), {
+          status: 403,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            models: {
+              "claude-opus-4-6-thinking": {
+                displayName: "Claude Opus 4.6 (Thinking)",
+                quotaInfo: {
+                  remainingFraction: 1,
+                  resetTime: "2026-09-01T01:52:45Z",
+                },
+              },
+              "gemini-3.1-pro-low": {
+                displayName: "Gemini 3.1 Pro (Low)",
+                quotaInfo: {
+                  remainingFraction: 0.7,
+                  resetTime: "2026-09-01T00:17:56Z",
+                },
+              },
+            },
+          }),
+          { status: 200 },
+        ),
+      ) as any;
 
     const result = await fetchAntigravityQuotasWithCredentials({
       accessToken: "antigravity-token",
@@ -549,18 +623,9 @@ describe("fetchAntigravityQuotasWithCredentials", () => {
         usedPercent: 30,
       });
     }
-
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer antigravity-token",
-        }),
-      }),
-    );
   });
 
-  it("handles HTTP error from fetchAvailableModels", async () => {
+  it("handles HTTP error when all endpoints fail", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(
       new Response("Unauthorized", { status: 401 }),
     ) as any;

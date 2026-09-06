@@ -47,6 +47,12 @@ const SHORT_LABELS: Record<string, string> = {
   "Gemini Pro": "pro",
   "Gemini Flash": "flash",
   "GPT-OSS 120B": "gpt",
+  "Gemini (5h)": "gem-5h",
+  "Gemini (Weekly)": "gem-wk",
+  "Claude (5h)": "claude-5h",
+  "Claude (Weekly)": "claude-wk",
+  "Claude & GPT (5h)": "claude-5h",
+  "Claude & GPT (Weekly)": "claude-wk",
 };
 
 /**

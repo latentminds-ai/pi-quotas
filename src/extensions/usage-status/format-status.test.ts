@@ -265,4 +265,45 @@ describe("formatWindowStatus", () => {
     expect(result).toContain("(now)");
     expect(result).not.toContain("(in now)");
   });
+
+  it("formats Antigravity quota window labels with compact short labels", () => {
+    const w1: WindowStatus = {
+      label: "Gemini (5h)",
+      usedPercent: 43,
+      severity: "none",
+      resetsAt: "2026-09-06T15:00:00Z",
+      limited: false,
+      usedValue: 43,
+      limitValue: 100,
+    };
+    const r1 = formatWindowStatus(theme, w1);
+    expect(r1).toContain("[dim]gem-5h:[/dim]");
+    expect(r1).toContain("57%");
+
+    const w2: WindowStatus = {
+      label: "Gemini (Weekly)",
+      usedPercent: 60,
+      severity: "none",
+      resetsAt: "2026-09-10T18:00:00Z",
+      limited: false,
+      usedValue: 60,
+      limitValue: 100,
+    };
+    const r2 = formatWindowStatus(theme, w2);
+    expect(r2).toContain("[dim]gem-wk:[/dim]");
+    expect(r2).toContain("40%");
+
+    const w3: WindowStatus = {
+      label: "Claude (5h)",
+      usedPercent: 0,
+      severity: "none",
+      resetsAt: "2026-09-06T16:00:00Z",
+      limited: false,
+      usedValue: 0,
+      limitValue: 100,
+    };
+    const r3 = formatWindowStatus(theme, w3);
+    expect(r3).toContain("[dim]claude-5h:[/dim]");
+    expect(r3).toContain("100%");
+  });
 });
