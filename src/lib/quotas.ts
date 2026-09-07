@@ -13,6 +13,7 @@ export const SUPPORTED_PROVIDERS: SupportedQuotaProvider[] = [
   "opencode-go",
   "kimi-coding",
   "ollama-cloud",
+  "minimax",
 ];
 
 export const PROVIDER_LABELS: Record<SupportedQuotaProvider, string> = {
@@ -26,6 +27,7 @@ export const PROVIDER_LABELS: Record<SupportedQuotaProvider, string> = {
   "opencode-go": "OpenCode Go",
   "kimi-coding": "Kimi Code",
   "ollama-cloud": "Ollama Cloud",
+  minimax: "MiniMax",
 };
 
 const PROVIDER_TTLS_MS: Record<SupportedQuotaProvider, number> = {
@@ -39,6 +41,7 @@ const PROVIDER_TTLS_MS: Record<SupportedQuotaProvider, number> = {
   "opencode-go": 60_000,
   "kimi-coding": 60_000,
   "ollama-cloud": 60_000,
+  minimax: 60_000,
 };
 
 type CacheEntry = {

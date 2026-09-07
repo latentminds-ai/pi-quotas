@@ -67,4 +67,13 @@ describe("getProviderCommandInfo", () => {
       title: "Kimi Code Quotas",
     });
   });
+
+  it("maps minimax to minimax:quotas", () => {
+    const info = getProviderCommandInfo("minimax");
+    expect(info).toMatchObject<Partial<ProviderCommandInfo>>({
+      provider: "minimax",
+      commandName: "minimax:quotas",
+      title: "MiniMax Quotas",
+    });
+  });
 });

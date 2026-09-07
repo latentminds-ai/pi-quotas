@@ -12,6 +12,7 @@ const CREDENTIAL_ENV_KEYS = [
   "OPENROUTER_API_KEY",
   "SYNTHETIC_API_KEY",
   "OLLAMA_API_KEY",
+  "MINIMAX_API_KEY",
 ];
 const originalFetch = globalThis.fetch;
 

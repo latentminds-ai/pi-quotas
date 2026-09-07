@@ -788,6 +788,114 @@ export function parseOllamaCloudUsage(data: any): QuotaWindow[] {
   return windows;
 }
 
+// MiniMax (MiniMax) Token Plan quotas. The
+// `/v1/api/openplatform/coding_plan/remains` endpoint returns one entry per
+// model class (e.g. "general", "video") with both a rolling interval window
+// and a weekly window. Each window reports its own
+// `*_remaining_percent` (clamped to 0–100 by the server), `*_usage_count` /
+// `*_total_count`, and a reset time (`remains_time` is ms-until-reset;
+// `end_time` / `weekly_end_time` are epoch ms absolute).
+//
+// `*_remaining_percent` is "remaining", not "used", so we invert with
+// `100 - remaining` and clamp to [0, 100] before storing it as
+// `usedPercent`. Without this inversion the dashboard, progress bar, and
+// quota warnings would render healthy and exhausted accounts backwards.
+//
+// `current_interval_status` / `current_weekly_status` look like enum flags
+// (1 = limited, 3 = healthy in observed responses) — we map those to
+// `limited` so the dashboard can render a warning independently of the
+// percentage.
+//
+// Window length is derived from `end_time - start_time` (and
+// `weekly_end_time - weekly_start_time`) so we don't hardcode 5h or 7d; if
+// the server changes the cadence the parser follows automatically.
+function remainingToUsedPercent(remaining: unknown): number {
+  const remainingNum = Number(remaining);
+  if (!Number.isFinite(remainingNum)) return 0;
+  return Math.max(0, Math.min(100, 100 - remainingNum));
+}
+
+export function parseMiniMaxUsage(data: any): QuotaWindow[] {
+  const windows: QuotaWindow[] = [];
+  const models: any[] = Array.isArray(data?.model_remains)
+    ? data.model_remains
+    : [];
+
+  for (const entry of models) {
+    if (!entry || typeof entry !== "object") continue;
+    const labelBase = String(entry.model_name ?? "Tokens");
+
+    // Rolling interval window (typically 5h on observed accounts, but the
+    // length is derived from `end_time - start_time` so we don't hardcode it).
+    if (
+      typeof entry.start_time === "number" &&
+      typeof entry.end_time === "number" &&
+      entry.end_time > entry.start_time &&
+      entry.current_interval_remaining_percent != null
+    ) {
+      const windowSeconds = Math.round(
+        (entry.end_time - entry.start_time) / 1000,
+      );
+      const resetsAt = new Date(entry.end_time);
+      const limited = entry.current_interval_status === 1;
+      windows.push({
+        provider: "minimax",
+        label: labelBase,
+        usedPercent: remainingToUsedPercent(
+          entry.current_interval_remaining_percent,
+        ),
+        resetsAt,
+        windowSeconds,
+        usedValue: Number(entry.current_interval_usage_count ?? 0),
+        limitValue: Number(entry.current_interval_total_count ?? 0),
+        showPace: true,
+        paceScale: 1,
+        limited,
+        nextLabel: limited ? "Limited" : "Resets",
+      });
+    }
+
+    // Weekly window. windowSeconds already spans the full seven-day period,
+    // so leave paceScale at the default (1) — getPacePercent's elapsed
+    // fraction is already correct as-is.
+    if (
+      typeof entry.weekly_start_time === "number" &&
+      typeof entry.weekly_end_time === "number" &&
+      entry.weekly_end_time > entry.weekly_start_time &&
+      entry.current_weekly_remaining_percent != null
+    ) {
+      const windowSeconds = Math.round(
+        (entry.weekly_end_time - entry.weekly_start_time) / 1000,
+      );
+      const resetsAt = new Date(entry.weekly_end_time);
+      const limited = entry.current_weekly_status === 1;
+      windows.push({
+        provider: "minimax",
+        label: `${labelBase} / wk`,
+        usedPercent: remainingToUsedPercent(
+          entry.current_weekly_remaining_percent,
+        ),
+        resetsAt,
+        windowSeconds,
+        usedValue: Number(entry.current_weekly_usage_count ?? 0),
+        limitValue: Number(entry.current_weekly_total_count ?? 0),
+        showPace: true,
+        limited,
+        nextLabel: limited ? "Limited" : "Resets",
+      });
+    }
+  }
+
+  // Stable ordering: shortest window first, then alphabetically by label.
+  windows.sort((a, b) => {
+    if (a.windowSeconds !== b.windowSeconds) {
+      return a.windowSeconds - b.windowSeconds;
+    }
+    return a.label.localeCompare(b.label);
+  });
+  return windows;
+}
+
 // Grok subscription quotas. The CLI billing endpoint exposes one current
 // credit period, optional per-product usage percentages, and an on-demand cap.
 export function parseXaiUsage(data: any): QuotaWindow[] {

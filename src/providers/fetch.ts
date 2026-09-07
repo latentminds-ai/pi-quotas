@@ -9,6 +9,7 @@ import {
   parseCodexUsage,
   parseGitHubCopilotUsage,
   parseKimiCodingUsage,
+  parseMiniMaxUsage,
   parseOllamaCloudUsage,
   parseOpenRouterUsage,
   parseSyntheticUsage,
@@ -563,6 +564,48 @@ export async function fetchXaiQuotas(
   );
 }
 
+export async function fetchMiniMaxQuotasWithToken(
+  apiKey: string | undefined,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  if (!apiKey) return failure("No MiniMax API key found", "config");
+  const result = await fetchJson(
+    "https://api.minimax.io/v1/api/openplatform/coding_plan/remains",
+    {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    },
+    signal,
+  );
+  if (!result.ok) return failure(result.message, result.kind);
+
+  // The MiniMax API wraps successful payloads in `base_resp.status_code`; a
+  // non-zero value is a server-side failure even though the HTTP request
+  // succeeded.
+  const statusCode = Number(result.data?.base_resp?.status_code ?? 0);
+  if (statusCode !== 0) {
+    return failure(
+      result.data?.base_resp?.status_msg ?? `MiniMax error ${statusCode}`,
+      "http",
+    );
+  }
+  return success("minimax", parseMiniMaxUsage(result.data));
+}
+
+export async function fetchMiniMaxQuotas(
+  authStorage: AuthStorage,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  // Prefer the key stored via `pi /login` (auth.json); fall back to the
+  // MINIMAX_API_KEY env var for setups that don't register credentials.
+  const apiKey =
+    (await providerAccessToken(authStorage, "minimax")) ??
+    process.env.MINIMAX_API_KEY;
+  return fetchMiniMaxQuotasWithToken(apiKey, signal);
+}
+
 export const PROVIDER_FETCHERS = {
   anthropic: fetchAnthropicQuotas,
   "openai-codex": fetchCodexQuotas,
@@ -574,4 +617,5 @@ export const PROVIDER_FETCHERS = {
   "opencode-go": fetchOpenCodeGoQuotas,
   "kimi-coding": fetchKimiCodingQuotas,
   "ollama-cloud": fetchOllamaCloudQuotas,
+  minimax: fetchMiniMaxQuotas,
 } as const;
