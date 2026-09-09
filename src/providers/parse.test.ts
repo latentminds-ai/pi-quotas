@@ -843,6 +843,78 @@ describe("parseZaiUsage", () => {
     });
   });
 
+  it("maps credit windows (CREDIT_LIMIT) with real credit counts", () => {
+    // Real payload captured from https://api.z.ai/api/monitor/usage/quota/limit
+    // (GLM Coding Plan, 2026-09): z.ai migrated token quotas to a credit-based
+    // system. `usage` is the credit entitlement, `currentValue` what's spent.
+    const windows = parseZaiUsage({
+      code: 200,
+      msg: "Operation successful",
+      data: {
+        level: "max",
+        limits: [
+          {
+            type: "CREDIT_LIMIT",
+            unit: 3,
+            number: 5,
+            usage: 28000,
+            currentValue: 13423,
+            remaining: 14576,
+            percentage: 47,
+            nextResetTime: 1788978519179,
+          },
+          {
+            type: "CREDIT_LIMIT",
+            unit: 6,
+            number: 1,
+            usage: 140000,
+            currentValue: 79992,
+            remaining: 60007,
+            percentage: 57,
+            nextResetTime: 1789401722983,
+          },
+        ],
+      },
+      success: true,
+    });
+
+    expect(windows).toHaveLength(2);
+    expect(windows[0]).toMatchObject({
+      provider: "zai",
+      label: "5h",
+      usedPercent: 47,
+      usedValue: 13423,
+      limitValue: 28000,
+      windowSeconds: 5 * 60 * 60,
+    });
+    expect(windows[1]).toMatchObject({
+      provider: "zai",
+      label: "7d",
+      usedPercent: 57,
+      usedValue: 79992,
+      limitValue: 140000,
+      windowSeconds: 7 * 24 * 60 * 60,
+    });
+  });
+
+  it("falls back to percent-based values for credit windows without counts", () => {
+    const windows = parseZaiUsage({
+      data: {
+        limits: [
+          { type: "CREDIT_LIMIT", unit: 3, number: 5, percentage: 12, nextResetTime: 1788978519179 },
+        ],
+      },
+    });
+
+    expect(windows).toHaveLength(1);
+    expect(windows[0]).toMatchObject({
+      label: "5h",
+      usedPercent: 12,
+      usedValue: 12,
+      limitValue: 100,
+    });
+  });
+
   it("skips the monthly window when the entitlement is zero", () => {
     const windows = parseZaiUsage({
       data: {
