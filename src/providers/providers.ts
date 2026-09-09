@@ -682,11 +682,18 @@ export function parseZaiUsage(data: any): QuotaWindow[] {
   for (const entry of limits) {
     if (!entry || typeof entry !== "object") continue;
 
-    // Token windows only expose a percentage, so — like Anthropic/Codex — we
-    // report usedValue as the percentage against a nominal limit of 100.
-    if (entry.type === "TOKENS_LIMIT") {
+    // Token and credit windows primarily expose a percentage, so — like
+    // Anthropic/Codex — we report usedValue as the percentage against a nominal
+    // limit of 100. Credit windows (CREDIT_LIMIT) additionally carry real
+    // counts — `usage` is the credit entitlement, `currentValue` what's been
+    // spent — so we prefer those when present.
+    if (entry.type === "TOKENS_LIMIT" || entry.type === "CREDIT_LIMIT") {
       const unit = entry.unit;
       const count = Number(entry.number ?? 1) || 1;
+      const creditLimit = Number(entry.usage ?? 0);
+      const creditUsed = Number(entry.currentValue ?? NaN);
+      const hasCreditCounts =
+        entry.type === "CREDIT_LIMIT" && creditLimit > 0 && Number.isFinite(creditUsed) && creditUsed >= 0;
       let label: string;
       let windowSeconds: number;
 
@@ -716,8 +723,8 @@ export function parseZaiUsage(data: any): QuotaWindow[] {
         usedPercent: Number(entry.percentage ?? 0),
         resetsAt: parseDateish(entry.nextResetTime),
         windowSeconds,
-        usedValue: Number(entry.percentage ?? 0),
-        limitValue: 100,
+        usedValue: hasCreditCounts ? creditUsed : Number(entry.percentage ?? 0),
+        limitValue: hasCreditCounts ? creditLimit : 100,
         showPace: false,
         nextLabel: "Resets",
       });
