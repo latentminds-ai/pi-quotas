@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Anthropic per-model weekly windows went missing for unlisted models**: the parser matched three hardcoded response keys (`seven_day_sonnet`, `seven_day_omelette`, `seven_day_opus`), so an account served a model outside that list saw no scoped window at all — on a current subscription the weekly bucket for the active model is often the ceiling that binds first. Scoped windows are now read from `limits[]`, which carries the display name the server assigns, so new models appear without a code change. The old keys remain as a fallback for responses without `limits[]`.
+
 ## [0.5.0] - 2026-08-31
 
 ### Added
