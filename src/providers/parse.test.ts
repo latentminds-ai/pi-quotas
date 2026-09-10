@@ -63,7 +63,42 @@ describe("parseAnthropicUsage", () => {
     });
   });
 
-  it("includes per-model 7d windows when present", () => {
+  it("names per-model 7d windows from limits[] so unlisted models still show", () => {
+    const windows = parseAnthropicUsage({
+      five_hour: { utilization: 7, resets_at: "2026-04-22T09:00:00Z" },
+      seven_day: { utilization: 10, resets_at: "2026-04-25T08:30:00Z" },
+      limits: [
+        { kind: "session", percent: 7, resets_at: "2026-04-22T09:00:00Z" },
+        { kind: "weekly_all", percent: 10, resets_at: "2026-04-25T08:30:00Z" },
+        {
+          kind: "weekly_scoped",
+          percent: 15,
+          resets_at: "2026-04-25T08:30:00Z",
+          scope: { model: { id: null, display_name: "Fable" } },
+        },
+      ],
+    });
+
+    const scoped = windows.find((w) => w.label === "7d Fable");
+    expect(scoped).toMatchObject({
+      provider: "anthropic",
+      usedPercent: 15,
+      windowSeconds: 7 * 24 * 60 * 60,
+    });
+  });
+
+  it("ignores scoped limits without a display name", () => {
+    const windows = parseAnthropicUsage({
+      five_hour: { utilization: 7, resets_at: "2026-04-22T09:00:00Z" },
+      limits: [
+        { kind: "weekly_scoped", percent: 15, resets_at: "2026-04-25T08:30:00Z" },
+      ],
+    });
+
+    expect(windows.filter((w) => w.label.startsWith("7d "))).toHaveLength(0);
+  });
+
+  it("falls back to the top-level model keys when limits[] is absent", () => {
     const windows = parseAnthropicUsage({
       five_hour: { utilization: 9, resets_at: "2026-04-22T09:00:00Z" },
       seven_day: { utilization: 31, resets_at: "2026-04-23T23:00:00Z" },

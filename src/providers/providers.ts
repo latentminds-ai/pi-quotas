@@ -50,26 +50,53 @@ export function parseAnthropicUsage(data: any): QuotaWindow[] {
     });
   }
 
-  // Per-model 7d windows
-  const modelWindows: Array<[string, string]> = [
-    ["seven_day_sonnet", "7d Sonnet"],
-    ["seven_day_omelette", "7d Opus"],
-    ["seven_day_opus", "7d Opus (legacy)"],
-  ];
-  for (const [key, label] of modelWindows) {
-    const entry = data?.[key];
-    if (entry && typeof entry === "object" && entry.utilization != null) {
+  // Per-model 7d windows. `limits[]` carries the display name the account was
+  // served, so a model the top-level keys below never heard of still shows up;
+  // those keys stay as the fallback for responses that predate `limits[]`.
+  const scoped = Array.isArray(data?.limits)
+    ? data.limits.filter(
+      (limit: any) =>
+        limit?.kind === "weekly_scoped" &&
+          limit?.percent != null &&
+          typeof limit?.scope?.model?.display_name === "string",
+    )
+    : [];
+
+  if (scoped.length > 0) {
+    for (const limit of scoped) {
       windows.push({
         provider: "anthropic",
-        label,
-        usedPercent: Number(entry.utilization),
-        resetsAt: parseDateish(entry.resets_at),
+        label: `7d ${limit.scope.model.display_name}`,
+        usedPercent: Number(limit.percent),
+        resetsAt: parseDateish(limit.resets_at),
         windowSeconds: 7 * 24 * 60 * 60,
-        usedValue: Number(entry.utilization),
+        usedValue: Number(limit.percent),
         limitValue: 100,
         showPace: false,
         nextLabel: "Resets",
       });
+    }
+  } else {
+    const modelWindows: Array<[string, string]> = [
+      ["seven_day_sonnet", "7d Sonnet"],
+      ["seven_day_omelette", "7d Opus"],
+      ["seven_day_opus", "7d Opus (legacy)"],
+    ];
+    for (const [key, label] of modelWindows) {
+      const entry = data?.[key];
+      if (entry && typeof entry === "object" && entry.utilization != null) {
+        windows.push({
+          provider: "anthropic",
+          label,
+          usedPercent: Number(entry.utilization),
+          resetsAt: parseDateish(entry.resets_at),
+          windowSeconds: 7 * 24 * 60 * 60,
+          usedValue: Number(entry.utilization),
+          limitValue: 100,
+          showPace: false,
+          nextLabel: "Resets",
+        });
+      }
     }
   }
 
