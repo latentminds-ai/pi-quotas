@@ -8,7 +8,8 @@ export type SupportedQuotaProvider =
   | "zai"
   | "opencode-go"
   | "kimi-coding"
-  | "ollama-cloud";
+  | "ollama-cloud"
+  | "antigravity";
 
 export type QuotasErrorKind =
   | "cancelled"

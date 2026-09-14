@@ -9,6 +9,7 @@ import { parseSyntheticUsage } from "./providers.js";
 import { parseXaiUsage } from "./providers.js";
 import { parseZaiUsage } from "./providers.js";
 import { parseOpenCodeGoUsage } from "./providers.js";
+import { parseAntigravityUsage } from "./providers.js";
 
 describe("parseAnthropicUsage", () => {
   it("maps oauth usage response into quota windows", () => {
@@ -974,5 +975,200 @@ describe("parseXaiUsage", () => {
         },
       }),
     ).toEqual([]);
+  });
+});
+
+describe("parseAntigravityUsage", () => {
+  it("maps retrieveUserQuotaSummary groups into quota windows", () => {
+    const windows = parseAntigravityUsage({
+      groups: [
+        {
+          displayName: "Gemini Models",
+          description: "Models within this group: Gemini Flash, Gemini Pro",
+          buckets: [
+            {
+              bucketId: "gemini-weekly",
+              displayName: "Weekly Limit Remaining",
+              window: "weekly",
+              resetTime: "2026-09-10T18:20:59Z",
+              remainingFraction: 0.398,
+            },
+            {
+              bucketId: "gemini-5h",
+              displayName: "Five Hour Limit Remaining",
+              window: "5h",
+              resetTime: "2026-09-06T13:43:17Z",
+              remainingFraction: 0.568,
+            },
+          ],
+        },
+        {
+          displayName: "Claude and GPT models",
+          description: "Models within this group: Claude Opus, Claude Sonnet, GPT-OSS",
+          buckets: [
+            {
+              bucketId: "3p-weekly",
+              displayName: "Weekly Limit Remaining",
+              window: "weekly",
+              resetTime: "2026-09-07T10:00:01Z",
+              remainingFraction: 0.534,
+            },
+            {
+              bucketId: "3p-5h",
+              displayName: "Five Hour Limit Remaining",
+              window: "5h",
+              resetTime: "2026-09-06T16:07:17Z",
+              remainingFraction: 1,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(windows).toHaveLength(4);
+    // 5h bucket sorted before weekly within Gemini
+    expect(windows[0]).toMatchObject({
+      provider: "antigravity",
+      label: "Gemini (5h)",
+      usedPercent: 43,
+      usedValue: 43,
+      limitValue: 100,
+      windowSeconds: 5 * 3600,
+      limited: false,
+    });
+    expect(windows[0].resetsAt.toISOString()).toBe("2026-09-06T13:43:17.000Z");
+
+    expect(windows[1]).toMatchObject({
+      provider: "antigravity",
+      label: "Gemini (Weekly)",
+      usedPercent: 60,
+      usedValue: 60,
+      limitValue: 100,
+      windowSeconds: 7 * 24 * 3600,
+      limited: false,
+    });
+    expect(windows[1].resetsAt.toISOString()).toBe("2026-09-10T18:20:59.000Z");
+
+    // 5h bucket sorted before weekly within Claude
+    expect(windows[2]).toMatchObject({
+      provider: "antigravity",
+      label: "Claude (5h)",
+      usedPercent: 0,
+      usedValue: 0,
+      limitValue: 100,
+      windowSeconds: 5 * 3600,
+      limited: false,
+    });
+    expect(windows[2].resetsAt.toISOString()).toBe("2026-09-06T16:07:17.000Z");
+
+    expect(windows[3]).toMatchObject({
+      provider: "antigravity",
+      label: "Claude (Weekly)",
+      usedPercent: 47,
+      usedValue: 47,
+      limitValue: 100,
+      windowSeconds: 7 * 24 * 3600,
+      limited: false,
+    });
+    expect(windows[3].resetsAt.toISOString()).toBe("2026-09-07T10:00:01.000Z");
+  });
+
+  it("marks window as limited when remainingFraction is 0", () => {
+    const windows = parseAntigravityUsage({
+      groups: [
+        {
+          displayName: "Gemini Models",
+          buckets: [
+            {
+              bucketId: "gemini-5h",
+              window: "5h",
+              resetTime: "2026-09-06T14:00:00Z",
+              remainingFraction: 0,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(windows).toHaveLength(1);
+    expect(windows[0]).toMatchObject({
+      label: "Gemini (5h)",
+      usedPercent: 100,
+      limited: true,
+    });
+  });
+
+  it("maps Google Code Assist models response into quota windows", () => {
+    const windows = parseAntigravityUsage({
+      models: {
+        "claude-opus-4-6-thinking": {
+          displayName: "Claude Opus 4.6 (Thinking)",
+          quotaInfo: {
+            remainingFraction: 0.85,
+            resetTime: "2026-09-01T01:52:45Z",
+          },
+        },
+        "gemini-3.1-pro-low": {
+          displayName: "Gemini 3.1 Pro (Low)",
+          quotaInfo: {
+            remainingFraction: 0.7,
+            resetTime: "2026-09-01T00:17:56Z",
+          },
+        },
+        "gemini-3.6-flash-high": {
+          displayName: "Gemini 3.6 Flash (High)",
+          quotaInfo: {
+            remainingFraction: 0.6,
+            resetTime: "2026-09-01T00:17:56Z",
+          },
+        },
+        "gpt-oss-120b-medium": {
+          displayName: "GPT-OSS 120B (Medium)",
+          quotaInfo: {
+            remainingFraction: 1.0,
+            resetTime: "2026-09-01T01:52:45Z",
+          },
+        },
+      },
+    });
+
+    expect(windows).toHaveLength(4);
+    expect(windows[0]).toMatchObject({
+      provider: "antigravity",
+      label: "Claude",
+      usedPercent: 15,
+      usedValue: 15,
+      limitValue: 100,
+    });
+    expect(windows[0].resetsAt.toISOString()).toBe("2026-09-01T01:52:45.000Z");
+
+    expect(windows[1]).toMatchObject({
+      provider: "antigravity",
+      label: "Gemini Pro",
+      usedPercent: 30,
+      usedValue: 30,
+      limitValue: 100,
+    });
+
+    expect(windows[2]).toMatchObject({
+      provider: "antigravity",
+      label: "Gemini Flash",
+      usedPercent: 40,
+      usedValue: 40,
+      limitValue: 100,
+    });
+
+    expect(windows[3]).toMatchObject({
+      provider: "antigravity",
+      label: "GPT-OSS 120B",
+      usedPercent: 0,
+      usedValue: 0,
+      limitValue: 100,
+    });
+  });
+
+  it("handles empty or missing model quotas gracefully", () => {
+    expect(parseAntigravityUsage({})).toEqual([]);
+    expect(parseAntigravityUsage({ models: {} })).toEqual([]);
   });
 });

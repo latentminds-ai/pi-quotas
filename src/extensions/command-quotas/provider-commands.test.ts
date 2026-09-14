@@ -67,4 +67,22 @@ describe("getProviderCommandInfo", () => {
       title: "Kimi Code Quotas",
     });
   });
+
+  it("maps ollama-cloud to ollama:quotas", () => {
+    const info = getProviderCommandInfo("ollama-cloud");
+    expect(info).toMatchObject<Partial<ProviderCommandInfo>>({
+      provider: "ollama-cloud",
+      commandName: "ollama:quotas",
+      title: "Ollama Cloud Quotas",
+    });
+  });
+
+  it("maps antigravity to antigravity:quotas", () => {
+    const info = getProviderCommandInfo("antigravity");
+    expect(info).toMatchObject<Partial<ProviderCommandInfo>>({
+      provider: "antigravity",
+      commandName: "antigravity:quotas",
+      title: "Antigravity Quotas",
+    });
+  });
 });
