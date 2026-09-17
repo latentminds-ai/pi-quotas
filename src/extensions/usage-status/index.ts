@@ -160,6 +160,12 @@ function createStatusRefresher() {
           setStatusSafely(ctx, undefined);
           return;
         }
+        // Rate-limited: clear silently. The 60-second refresh timer will retry
+        // automatically once the provider's rate-limit window resets.
+        if (result.error.kind === "rate_limited") {
+          setStatusSafely(ctx, undefined);
+          return;
+        }
         setStatusSafely(ctx, (ctx) => ctx.ui.theme.fg("warning", "usage unavailable"));
         return;
       }

@@ -20,6 +20,10 @@ import { resolveOpenCodeGoConfigCached } from "./opencode-go-config.js";
 import { queryOpenCodeGoQuota } from "./opencode-go.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
+
+// Matches the Claude Code version Pi embeds in its Anthropic transport.
+// Keeps pi-quotas in the same CLI rate-limit bucket as Pi itself.
+const CLAUDE_CLI_VERSION = "2.1.251";
 const COPILOT_VERSION = "0.35.0";
 const EDITOR_VERSION = "vscode/1.107.0";
 
@@ -63,7 +67,7 @@ type FetchJsonResult =
       ok: false;
       status?: number;
       message: string;
-      kind: "timeout" | "cancelled" | "http" | "network";
+      kind: "timeout" | "cancelled" | "http" | "rate_limited" | "network";
     };
 
 /**
@@ -111,7 +115,7 @@ async function fetchJson(
         ok: false,
         status: response.status,
         message: cleanHttpErrorMessage(body) || response.statusText || `HTTP ${response.status}`,
-        kind: "http",
+        kind: response.status === 429 ? "rate_limited" : "http",
       };
     }
     return { ok: true, data: await response.json() };
@@ -159,15 +163,22 @@ export async function fetchAnthropicQuotasWithToken(
       "not_applicable",
     );
   }
+  // Pi's built-in Anthropic transport always sends x-app and user-agent to
+  // identify itself as a Claude CLI client. Without these, requests land in
+  // the anonymous/browser rate-limit bucket, which is far more restrictive
+  // than the CLI bucket and causes spurious 429s under normal polling rates.
+  const ANTHROPIC_CLI_HEADERS = {
+    Authorization: `Bearer ${accessToken}`,
+    "anthropic-beta": "oauth-2025-04-20",
+    "Accept": "application/json, text/plain, */*",
+    "Content-Type": "application/json",
+    "x-app": "cli",
+    "user-agent": `claude-cli/${CLAUDE_CLI_VERSION}`,
+  };
+
   const result = await fetchJson(
     "https://api.anthropic.com/api/oauth/usage",
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "anthropic-beta": "oauth-2025-04-20",
-        Accept: "application/json",
-      },
-    },
+    { headers: ANTHROPIC_CLI_HEADERS },
     signal,
   );
   if (!result.ok) return failure(result.message, result.kind);

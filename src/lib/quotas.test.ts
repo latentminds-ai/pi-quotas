@@ -75,6 +75,36 @@ describe("fetchProviderQuotas", () => {
     expect(fetcherMocks.synthetic).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps serving the last good snapshot when a refresh fails", async () => {
+    fetcherMocks.zai.mockResolvedValueOnce(successResult);
+    const first = await fetchProviderQuotas(authStorage, "zai");
+    expect(first).toBe(successResult);
+
+    // Age the snapshot past the provider TTL, then fail the refresh.
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 61_000);
+    try {
+      fetcherMocks.zai.mockRejectedValueOnce(new Error("boom"));
+      const second = await fetchProviderQuotas(authStorage, "zai");
+
+      expect(second).toBe(successResult);
+      expect(fetcherMocks.zai).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reuses a cached failure when there is no known-good snapshot", async () => {
+    fetcherMocks.zai.mockRejectedValue(new Error("boom"));
+
+    const first = await fetchProviderQuotas(authStorage, "zai");
+    const second = await fetchProviderQuotas(authStorage, "zai");
+
+    expect(first.success).toBe(false);
+    expect(second).toBe(first);
+    expect(fetcherMocks.zai).toHaveBeenCalledTimes(1);
+  });
+
   it("passes through successful results", async () => {
     fetcherMocks["kimi-coding"].mockResolvedValue(successResult);
 

@@ -19,7 +19,10 @@ export type QuotasErrorKind =
   // The provider is not applicable for the stored credential type
   // (e.g. a direct Anthropic API key has no OAuth subscription usage to
   // report). Consumers should render this silently rather than as a warning.
-  | "not_applicable";
+  | "not_applicable"
+  // The provider API returned HTTP 429. Data will be available after the
+  // rate-limit window resets; show nothing rather than a persistent warning.
+  | "rate_limited";
 
 export type QuotasResult =
   | {
