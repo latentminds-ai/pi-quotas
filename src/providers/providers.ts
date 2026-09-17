@@ -513,18 +513,21 @@ export function parseOpenCodeGoUsage(data: {
     resetInSec: number;
     percentRemaining: number;
     resetTimeIso: string;
+    limited?: boolean;
   };
   weekly?: {
     usagePercent: number;
     resetInSec: number;
     percentRemaining: number;
     resetTimeIso: string;
+    limited?: boolean;
   };
   monthly?: {
     usagePercent: number;
     resetInSec: number;
     percentRemaining: number;
     resetTimeIso: string;
+    limited?: boolean;
   };
 }): QuotaWindow[] {
   const windows: QuotaWindow[] = [];
@@ -539,7 +542,8 @@ export function parseOpenCodeGoUsage(data: {
       usedValue: data.rolling.usagePercent,
       limitValue: 100,
       showPace: false,
-      nextLabel: "Resets",
+      limited: data.rolling.limited,
+      nextLabel: data.rolling.limited ? "Limited" : "Resets",
     });
   }
 
@@ -554,7 +558,8 @@ export function parseOpenCodeGoUsage(data: {
       limitValue: 100,
       showPace: true,
       paceScale: 1 / 7,
-      nextLabel: "Resets",
+      limited: data.weekly.limited,
+      nextLabel: data.weekly.limited ? "Limited" : "Resets",
     });
   }
 
@@ -569,7 +574,8 @@ export function parseOpenCodeGoUsage(data: {
       limitValue: 100,
       showPace: true,
       paceScale: 1,
-      nextLabel: "Resets",
+      limited: data.monthly.limited,
+      nextLabel: data.monthly.limited ? "Limited" : "Resets",
     });
   }
 

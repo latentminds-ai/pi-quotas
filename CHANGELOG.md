@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **OpenCode Go provider**: replaced dashboard SSR scraping (workspace ID + auth cookie) with the official `GET https://opencode.ai/zen/go/v1/usage` endpoint authenticated by an OpenCode Go API key. Reads the key from `pi /login opencode-go` (`auth.json`), then `OPENCODE_GO_API_KEY`, then a config file `apiKey` / the OpenCode CLI `auth.json`. The dashboard no longer server-renders usage data, so the previous scraper always failed with "Could not parse OpenCode Go dashboard usage windows"; legacy `workspaceId`/`authCookie` configs now report a migration hint.
+
 ## [0.5.0] - 2026-08-31
 
 ### Added

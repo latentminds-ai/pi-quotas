@@ -1,53 +1,31 @@
 /**
  * OpenCode Go client.
  *
- * Fetches usage data from OpenCode Go dashboard using workspace ID and auth cookie.
- * Scrapes SolidJS SSR hydration output for usage windows.
+ * Uses the official quota API instead of scraping the dashboard:
+ *
+ *   GET https://opencode.ai/zen/go/v1/usage
+ *   Authorization: Bearer <OpenCode Go API key>
+ *
+ * Response shape:
+ *   { usage: { rolling|weekly|monthly: { status, percent, resetsAt } } }
  *
  * Configuration:
- * - Environment: OPENCODE_GO_WORKSPACE_ID + OPENCODE_GO_AUTH_COOKIE
+ * - Pi auth entry: `pi /login opencode-go` (preferred)
+ * - Environment: OPENCODE_GO_API_KEY
  * - Config file: ~/.config/opencode/opencode-quota/opencode-go.json
+ * - OpenCode CLI auth: ~/.local/share/opencode/auth.json
  */
 
-const DASHBOARD_URL_PREFIX = "https://opencode.ai/workspace/";
-const DASHBOARD_URL_SUFFIX = "/go";
-const USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Gecko/20100101 Firefox/148.0";
+const USAGE_URL = "https://opencode.ai/zen/go/v1/usage";
 const REQUEST_TIMEOUT_MS = 10_000;
-
-const SCRAPED_NUMBER_PATTERN = String.raw`(-?\d+(?:\.\d+)?)`;
-
-const RE_ROLLING_PCT_FIRST = new RegExp(
-  String.raw`rollingUsage:\$R\[\d+\]=\{[^}]*usagePercent:${SCRAPED_NUMBER_PATTERN}[^}]*resetInSec:${SCRAPED_NUMBER_PATTERN}[^}]*\}`,
-);
-const RE_ROLLING_RESET_FIRST = new RegExp(
-  String.raw`rollingUsage:\$R\[\d+\]=\{[^}]*resetInSec:${SCRAPED_NUMBER_PATTERN}[^}]*usagePercent:${SCRAPED_NUMBER_PATTERN}[^}]*\}`,
-);
-
-const RE_WEEKLY_PCT_FIRST = new RegExp(
-  String.raw`weeklyUsage:\$R\[\d+\]=\{[^}]*usagePercent:${SCRAPED_NUMBER_PATTERN}[^}]*resetInSec:${SCRAPED_NUMBER_PATTERN}[^}]*\}`,
-);
-const RE_WEEKLY_RESET_FIRST = new RegExp(
-  String.raw`weeklyUsage:\$R\[\d+\]=\{[^}]*resetInSec:${SCRAPED_NUMBER_PATTERN}[^}]*usagePercent:${SCRAPED_NUMBER_PATTERN}[^}]*\}`,
-);
-
-const RE_MONTHLY_PCT_FIRST = new RegExp(
-  String.raw`monthlyUsage:\$R\[\d+\]=\{[^}]*usagePercent:${SCRAPED_NUMBER_PATTERN}[^}]*resetInSec:${SCRAPED_NUMBER_PATTERN}[^}]*\}`,
-);
-const RE_MONTHLY_RESET_FIRST = new RegExp(
-  String.raw`monthlyUsage:\$R\[\d+\]=\{[^}]*resetInSec:${SCRAPED_NUMBER_PATTERN}[^}]*usagePercent:${SCRAPED_NUMBER_PATTERN}[^}]*\}`,
-);
-
-interface ScrapedWindowUsage {
-  usagePercent: number;
-  resetInSec: number;
-}
 
 export interface OpenCodeGoWindow {
   usagePercent: number;
   resetInSec: number;
   percentRemaining: number;
   resetTimeIso: string;
+  /** True when the API reports the window as rate-limited rather than "ok". */
+  limited?: boolean;
 }
 
 export interface OpenCodeGoQuotaResult {
@@ -65,48 +43,80 @@ export interface OpenCodeGoQuotaError {
 export type OpenCodeGoResult = OpenCodeGoQuotaResult | OpenCodeGoQuotaError;
 
 export interface OpenCodeGoConfig {
-  workspaceId: string;
-  authCookie: string;
+  apiKey: string;
 }
 
-function parseWindowUsage(
-  html: string,
-  rePctFirst: RegExp,
-  reResetFirst: RegExp,
-): ScrapedWindowUsage | null {
-  const pctFirstMatch = rePctFirst.exec(html);
-  if (pctFirstMatch) {
-    const usagePercent = Number(pctFirstMatch[1]);
-    const resetInSec = Number(pctFirstMatch[2]);
-    if (Number.isFinite(usagePercent) && Number.isFinite(resetInSec)) {
-      return { usagePercent, resetInSec };
-    }
-  }
-
-  const resetFirstMatch = reResetFirst.exec(html);
-  if (resetFirstMatch) {
-    const resetInSec = Number(resetFirstMatch[1]);
-    const usagePercent = Number(resetFirstMatch[2]);
-    if (Number.isFinite(usagePercent) && Number.isFinite(resetInSec)) {
-      return { usagePercent, resetInSec };
-    }
-  }
-
-  return null;
+interface ApiWindow {
+  status?: unknown;
+  percent?: unknown;
+  resetsAt?: unknown;
 }
 
-function normalizeWindowUsage(
-  window: ScrapedWindowUsage,
-  now: number,
-): OpenCodeGoWindow {
-  const usagePercent = Math.max(0, window.usagePercent);
-  const resetInSec = Math.max(0, window.resetInSec);
-  return {
-    usagePercent,
-    resetInSec,
-    percentRemaining: 100 - usagePercent,
-    resetTimeIso: new Date(now + resetInSec * 1000).toISOString(),
+interface ApiPayload {
+  usage?: {
+    rolling?: ApiWindow;
+    weekly?: ApiWindow;
+    monthly?: ApiWindow;
   };
+}
+
+function normalizeWindow(window: ApiWindow, now: number): OpenCodeGoWindow | null {
+  const usagePercent = Number(window.percent);
+  if (!Number.isFinite(usagePercent)) return null;
+
+  const resetsAtMs = typeof window.resetsAt === "string" ? Date.parse(window.resetsAt) : Number.NaN;
+  const resetInSec = Number.isFinite(resetsAtMs)
+    ? Math.max(0, Math.round((resetsAtMs - now) / 1000))
+    : 0;
+
+  const clampedPercent = Math.max(0, Math.min(100, usagePercent));
+  const limited = typeof window.status === "string" && window.status !== "ok";
+
+  return {
+    usagePercent: clampedPercent,
+    resetInSec,
+    percentRemaining: 100 - clampedPercent,
+    resetTimeIso: Number.isFinite(resetsAtMs)
+      ? new Date(resetsAtMs).toISOString()
+      : new Date(now + resetInSec * 1000).toISOString(),
+    ...(limited ? { limited: true } : {}),
+  };
+}
+
+/** Parse the `/zen/go/v1/usage` payload into usage windows. */
+export function parseOpenCodeGoApiUsage(
+  payload: unknown,
+  now = Date.now(),
+): OpenCodeGoQuotaResult | null {
+  if (!payload || typeof payload !== "object") return null;
+  const usage = (payload as ApiPayload).usage;
+  if (!usage || typeof usage !== "object") return null;
+
+  const rolling = usage.rolling ? normalizeWindow(usage.rolling, now) : null;
+  const weekly = usage.weekly ? normalizeWindow(usage.weekly, now) : null;
+  const monthly = usage.monthly ? normalizeWindow(usage.monthly, now) : null;
+
+  if (!rolling && !weekly && !monthly) return null;
+
+  return {
+    success: true,
+    ...(rolling ? { rolling } : {}),
+    ...(weekly ? { weekly } : {}),
+    ...(monthly ? { monthly } : {}),
+  };
+}
+
+function errorForStatus(status: number, body: string): string {
+  if (status === 401) {
+    return (
+      "OpenCode Go API key rejected (401). Run `pi /login opencode-go`," +
+      " or set OPENCODE_GO_API_KEY"
+    );
+  }
+  if (status === 403) {
+    return "OpenCode Go subscription required (403). Subscribe to OpenCode Go first.";
+  }
+  return `OpenCode Go usage API error ${status}: ${body.slice(0, 120)}`;
 }
 
 export async function queryOpenCodeGoQuota(
@@ -114,60 +124,34 @@ export async function queryOpenCodeGoQuota(
   signal?: AbortSignal,
 ): Promise<OpenCodeGoResult> {
   try {
-    const url = `${DASHBOARD_URL_PREFIX}${encodeURIComponent(config.workspaceId)}${DASHBOARD_URL_SUFFIX}`;
     const signals: AbortSignal[] = [AbortSignal.timeout(REQUEST_TIMEOUT_MS)];
     if (signal) signals.push(signal);
     const combined = AbortSignal.any(signals);
 
-    const response = await fetch(url, {
+    const response = await fetch(USAGE_URL, {
       method: "GET",
       headers: {
-        "User-Agent": USER_AGENT,
-        Accept: "text/html",
-        Cookie: `auth=${config.authCookie}`,
+        Authorization: `Bearer ${config.apiKey}`,
+        Accept: "application/json",
       },
       signal: combined,
     });
 
     if (!response.ok) {
       const text = await response.text().catch(() => "");
+      return { success: false, error: errorForStatus(response.status, text) };
+    }
+
+    const payload = (await response.json().catch(() => null)) as unknown;
+    const parsed = parseOpenCodeGoApiUsage(payload);
+    if (!parsed) {
       return {
         success: false,
-        error: `OpenCode Go dashboard error ${response.status}: ${text.slice(0, 120)}`,
+        error: "Could not parse OpenCode Go usage response",
       };
     }
 
-    const html = await response.text();
-    const rolling = parseWindowUsage(
-      html,
-      RE_ROLLING_PCT_FIRST,
-      RE_ROLLING_RESET_FIRST,
-    );
-    const weekly = parseWindowUsage(
-      html,
-      RE_WEEKLY_PCT_FIRST,
-      RE_WEEKLY_RESET_FIRST,
-    );
-    const monthly = parseWindowUsage(
-      html,
-      RE_MONTHLY_PCT_FIRST,
-      RE_MONTHLY_RESET_FIRST,
-    );
-
-    if (!rolling && !weekly && !monthly) {
-      return {
-        success: false,
-        error: "Could not parse OpenCode Go dashboard usage windows",
-      };
-    }
-
-    const now = Date.now();
-    return {
-      success: true,
-      ...(rolling ? { rolling: normalizeWindowUsage(rolling, now) } : {}),
-      ...(weekly ? { weekly: normalizeWindowUsage(weekly, now) } : {}),
-      ...(monthly ? { monthly: normalizeWindowUsage(monthly, now) } : {}),
-    };
+    return parsed;
   } catch (err) {
     if (err instanceof Error && err.name === "TimeoutError") {
       return { success: false, error: "Request timed out" };

@@ -1,4 +1,7 @@
 import { AuthStorage } from "@mariozechner/pi-coding-agent";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fetchAnthropicQuotasWithToken,
@@ -7,10 +10,12 @@ import {
   fetchGitHubCopilotQuotasWithToken,
   fetchKimiCodingQuotasWithToken,
   fetchOllamaCloudQuotasWithToken,
+  fetchOpenCodeGoQuotas,
   fetchOpenRouterQuotasWithToken,
   fetchSyntheticQuotas,
   fetchXaiQuotasWithToken,
 } from "./fetch.js";
+import { resetOpenCodeGoApiKeyCache } from "./opencode-go-config.js";
 
 const originalFetch = globalThis.fetch;
 
@@ -493,5 +498,122 @@ describe("fetchXaiQuotasWithToken", () => {
       success: false,
       error: { kind: "http", message: "token rejected" },
     });
+  });
+});
+
+describe("fetchOpenCodeGoQuotas", () => {
+  const realHomedir = process.env.HOME;
+
+  afterEach(async () => {
+    process.env.HOME = realHomedir;
+    resetOpenCodeGoApiKeyCache();
+    await rm(homeDir, { recursive: true, force: true });
+  });
+
+  let homeDir = "";
+
+  async function stubEmptyHome() {
+    homeDir = await mkdtemp(join(tmpdir(), "pi-quotas-go-home-"));
+    process.env.HOME = homeDir;
+    resetOpenCodeGoApiKeyCache();
+    return homeDir;
+  }
+
+  it("uses the stored auth.json key and converts windows", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          usage: {
+            rolling: { status: "ok", percent: 12, resetsAt: "2026-09-17T19:29:31.391Z" },
+            weekly: { status: "ok", percent: 34, resetsAt: "2026-09-21T00:00:00.000Z" },
+            monthly: { status: "rate-limited", percent: 100, resetsAt: "2026-10-16T13:49:43.000Z" },
+          },
+        }),
+        { status: 200 },
+      ),
+    ) as unknown as typeof fetch;
+
+    const result = await fetchOpenCodeGoQuotas(
+      AuthStorage.inMemory({ "opencode-go": { type: "api_key", key: "sk-stored" } }),
+    );
+
+    expect(result).toMatchObject({ success: true });
+    if (!result.success) throw new Error("expected success");
+    expect(result.data.windows.map((w) => w.label)).toEqual([
+      "5h Rolling",
+      "Weekly",
+      "Monthly",
+    ]);
+    expect(result.data.windows[2]).toMatchObject({ usedPercent: 100, limited: true });
+  });
+
+  it("reports a config error when no key exists anywhere", async () => {
+    await stubEmptyHome();
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+
+    const result = await fetchOpenCodeGoQuotas(AuthStorage.inMemory({}));
+
+    expect(result).toMatchObject({ success: false, error: { kind: "config" } });
+    if (result.success) throw new Error("expected failure");
+    expect(result.error.message).toContain("pi /login opencode-go");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("prefers OPENCODE_GO_API_KEY over credential files", async () => {
+    const home = await stubEmptyHome();
+    await mkdir(join(home, ".config", "opencode", "opencode-quota"), { recursive: true });
+    await writeFile(
+      join(home, ".config", "opencode", "opencode-quota", "opencode-go.json"),
+      JSON.stringify({ apiKey: "sk-from-file" }),
+    );
+    process.env.OPENCODE_GO_API_KEY = "sk-from-env";
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ usage: { rolling: { percent: 1 } } }), { status: 200 }),
+    ) as unknown as typeof fetch;
+
+    try {
+      await fetchOpenCodeGoQuotas(AuthStorage.inMemory({}));
+      const [url, init] = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock
+        .calls[0] as [string, RequestInit];
+      expect(url).toBe("https://opencode.ai/zen/go/v1/usage");
+      expect((init.headers as Record<string, string>).Authorization).toBe("Bearer sk-from-env");
+    } finally {
+      delete process.env.OPENCODE_GO_API_KEY;
+    }
+  });
+
+  it("explains the migration for a legacy workspaceId/authCookie config", async () => {
+    const home = await stubEmptyHome();
+    await mkdir(join(home, ".config", "opencode", "opencode-quota"), { recursive: true });
+    await writeFile(
+      join(home, ".config", "opencode", "opencode-quota", "opencode-go.json"),
+      JSON.stringify({ workspaceId: "wrk_1", authCookie: "Fe26.2**abc" }),
+    );
+
+    const result = await fetchOpenCodeGoQuotas(AuthStorage.inMemory({}));
+
+    expect(result).toMatchObject({ success: false, error: { kind: "config" } });
+    if (result.success) throw new Error("expected failure");
+    expect(result.error.message).toContain("no longer supported");
+  });
+
+  it("reads the OpenCode CLI auth.json as a fallback", async () => {
+    const home = await stubEmptyHome();
+    await mkdir(join(home, ".local", "share", "opencode"), { recursive: true });
+    await writeFile(
+      join(home, ".local", "share", "opencode", "auth.json"),
+      JSON.stringify({ "opencode-go": { type: "api_key", key: "sk-cli" } }),
+    );
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ usage: { rolling: { percent: 2 } } }), { status: 200 }),
+    ) as unknown as typeof fetch;
+
+    const result = await fetchOpenCodeGoQuotas(AuthStorage.inMemory({}));
+
+    expect(result).toMatchObject({ success: true });
+    const [, init] = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer sk-cli");
   });
 });

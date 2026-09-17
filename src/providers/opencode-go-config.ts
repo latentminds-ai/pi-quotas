@@ -2,126 +2,119 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-export interface OpenCodeGoConfig {
-  workspaceId: string;
-  authCookie: string;
-}
-
-export type ResolvedOpenCodeGoConfig =
+export type ResolvedOpenCodeGoApiKey =
+  | { state: "configured"; apiKey: string; source: string }
   | { state: "none" }
-  | { state: "configured"; config: OpenCodeGoConfig; source: string }
-  | { state: "incomplete"; source: string; missing: string }
   | { state: "invalid"; source: string; error: string };
 
-function getConfigCandidatePaths(): string[] {
+function getApiKeyCandidatePaths(): string[] {
   const home = homedir();
   return [
     join(home, ".config", "opencode", "opencode-quota", "opencode-go.json"),
     join(home, ".config", "opencode-go", "config.json"),
+    join(home, ".local", "share", "opencode", "auth.json"),
+    join(home, ".config", "opencode", "auth.json"),
   ];
 }
 
-async function readConfigFile(
+function pickString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+async function readJson(
   path: string,
 ): Promise<
   | { state: "missing" }
-  | { state: "loaded"; config: Partial<OpenCodeGoConfig> }
+  | { state: "loaded"; data: Record<string, unknown> }
   | { state: "invalid"; error: string }
 > {
   try {
-    const data = await readFile(path, "utf-8");
-    const parsed = JSON.parse(data) as Record<string, unknown>;
+    const raw = await readFile(path, "utf-8");
+    const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return {
-        state: "invalid",
-        error: "Config file must contain a JSON object",
-      };
+      return { state: "invalid", error: "Config file must contain a JSON object" };
     }
-    return { state: "loaded", config: parsed as Partial<OpenCodeGoConfig> };
+    return { state: "loaded", data: parsed as Record<string, unknown> };
   } catch (error) {
     if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
       return { state: "missing" };
     }
     const message = error instanceof Error ? error.message : String(error);
-    return {
-      state: "invalid",
-      error: `Failed to read config file: ${message}`,
-    };
+    return { state: "invalid", error: `Failed to read config file: ${message}` };
   }
 }
 
-export function resolveOpenCodeGoConfigFromEnv(
+/** Extract an API key from a quota config file or an OpenCode auth.json. */
+export function apiKeyFromConfigData(
+  data: Record<string, unknown>,
+): { apiKey: string } | { legacy: true } | null {
+  const direct =
+    pickString(data.apiKey) || pickString(data.key) || pickString(data.OPENCODE_GO_API_KEY);
+  if (direct) return { apiKey: direct };
+
+  const entry = data["opencode-go"];
+  if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+    const record = entry as Record<string, unknown>;
+    const key = pickString(record.key) || pickString(record.apiKey);
+    if (key) return { apiKey: key };
+  }
+
+  if (pickString(data.workspaceId) || pickString(data.authCookie)) {
+    return { legacy: true };
+  }
+  return null;
+}
+
+export function resolveOpenCodeGoApiKeyFromEnv(
   env: NodeJS.ProcessEnv = process.env,
-): ResolvedOpenCodeGoConfig | null {
-  const workspaceId = env.OPENCODE_GO_WORKSPACE_ID?.trim();
-  const authCookie = env.OPENCODE_GO_AUTH_COOKIE?.trim();
-
-  if (!workspaceId && !authCookie) return null;
-
-  if (workspaceId && authCookie) {
-    return {
-      state: "configured",
-      config: { workspaceId, authCookie },
-      source: "env",
-    };
-  }
-
-  return {
-    state: "incomplete",
-    source: "env",
-    missing: workspaceId
-      ? "OPENCODE_GO_AUTH_COOKIE"
-      : "OPENCODE_GO_WORKSPACE_ID",
-  };
+): Extract<ResolvedOpenCodeGoApiKey, { state: "configured" }> | null {
+  const apiKey = env.OPENCODE_GO_API_KEY?.trim();
+  if (!apiKey) return null;
+  return { state: "configured", apiKey, source: "env" };
 }
 
-export async function resolveOpenCodeGoConfig(): Promise<ResolvedOpenCodeGoConfig> {
-  const envResult = resolveOpenCodeGoConfigFromEnv();
-  if (envResult) return envResult;
-
-  const candidates = getConfigCandidatePaths();
-  for (const path of candidates) {
-    const fileResult = await readConfigFile(path);
+export async function resolveOpenCodeGoApiKeyFromFiles(): Promise<ResolvedOpenCodeGoApiKey> {
+  for (const path of getApiKeyCandidatePaths()) {
+    const fileResult = await readJson(path);
     if (fileResult.state === "missing") continue;
     if (fileResult.state === "invalid") {
       return { state: "invalid", source: path, error: fileResult.error };
     }
 
-    const config = fileResult.config;
-    const workspaceId =
-      typeof config.workspaceId === "string" ? config.workspaceId.trim() : "";
-    const authCookie =
-      typeof config.authCookie === "string" ? config.authCookie.trim() : "";
-
-    if (workspaceId && authCookie) {
+    const extracted = apiKeyFromConfigData(fileResult.data);
+    if (!extracted) continue;
+    if ("legacy" in extracted) {
       return {
-        state: "configured",
-        config: { workspaceId, authCookie },
+        state: "invalid",
         source: path,
+        error:
+          "workspaceId/authCookie scraping is no longer supported." +
+          " Replace them with an \"apiKey\" field (OpenCode Go API key)",
       };
     }
-
-    const missing = !workspaceId ? "workspaceId" : "authCookie";
-    return { state: "incomplete", source: path, missing };
+    return { state: "configured", apiKey: extracted.apiKey, source: path };
   }
-
   return { state: "none" };
 }
 
-let cachedConfig: ResolvedOpenCodeGoConfig | null = null;
+let cached: ResolvedOpenCodeGoApiKey | null = null;
 let cachedAt = 0;
 
 const CACHE_MAX_AGE_MS = 30_000;
 
-export async function resolveOpenCodeGoConfigCached(params?: {
+/** Test hook: drop the memoized file-resolution result. */
+export function resetOpenCodeGoApiKeyCache(): void {
+  cached = null;
+  cachedAt = 0;
+}
+
+export async function resolveOpenCodeGoApiKeyFromFilesCached(params?: {
   maxAgeMs?: number;
-}): Promise<ResolvedOpenCodeGoConfig> {
+}): Promise<ResolvedOpenCodeGoApiKey> {
   const maxAgeMs = Math.max(0, params?.maxAgeMs ?? CACHE_MAX_AGE_MS);
   const now = Date.now();
-  if (cachedConfig && now - cachedAt < maxAgeMs) {
-    return cachedConfig;
-  }
-  cachedConfig = await resolveOpenCodeGoConfig();
+  if (cached && now - cachedAt < maxAgeMs) return cached;
+  cached = await resolveOpenCodeGoApiKeyFromFiles();
   cachedAt = now;
-  return cachedConfig;
+  return cached;
 }

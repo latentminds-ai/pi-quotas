@@ -676,6 +676,32 @@ describe("parseOpenCodeGoUsage", () => {
     const windows = parseOpenCodeGoUsage({});
     expect(windows).toHaveLength(0);
   });
+
+  it("marks rate-limited windows as limited", () => {
+    const windows = parseOpenCodeGoUsage({
+      rolling: {
+        usagePercent: 100,
+        resetInSec: 12000,
+        percentRemaining: 0,
+        resetTimeIso: "2026-05-18T22:00:00Z",
+        limited: true,
+      },
+      weekly: {
+        usagePercent: 62,
+        resetInSec: 500000,
+        percentRemaining: 38,
+        resetTimeIso: "2026-05-25T00:00:00Z",
+      },
+    });
+
+    expect(windows[0]).toMatchObject({
+      label: "5h Rolling",
+      limited: true,
+      nextLabel: "Limited",
+    });
+    expect(windows[1].limited).toBeUndefined();
+    expect(windows[1].nextLabel).toBe("Resets");
+  });
 });
 
 describe("parseKimiCodingUsage", () => {
