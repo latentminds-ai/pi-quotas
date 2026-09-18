@@ -876,3 +876,93 @@ export function parseXaiUsage(data: any): QuotaWindow[] {
 
   return windows;
 }
+
+/** Cursor plan usage for the current billing cycle. Monetary values are cents. */
+export function parseCursorUsage(data: any): QuotaWindow[] {
+  const plan = data?.planUsage;
+  if (!plan || typeof plan !== "object") return [];
+
+  const start = parseDateish(data?.billingCycleStart);
+  const end = parseDateish(data?.billingCycleEnd);
+  const resetsAt = Number.isFinite(end.getTime()) && end.getTime() > 0
+    ? end
+    : new Date(0);
+  const measuredSeconds = (end.getTime() - start.getTime()) / 1000;
+  const windowSeconds = Number.isFinite(measuredSeconds) && measuredSeconds > 0
+    ? Math.round(measuredSeconds)
+    : 30 * 24 * 60 * 60;
+  const windows: QuotaWindow[] = [];
+
+  const limitCents = Number(plan.limit);
+  const remainingCents = Number(plan.remaining);
+  const spentCents = Number.isFinite(Number(plan.totalSpend))
+    ? Number(plan.totalSpend)
+    : limitCents - remainingCents;
+  const reportedPercent = Number(plan.totalPercentUsed);
+  const usedPercent = Number.isFinite(reportedPercent)
+    ? reportedPercent
+    : safePercent(spentCents, limitCents);
+  if (Number.isFinite(usedPercent)) {
+    windows.push({
+      provider: "cursor",
+      label: "Plan",
+      usedPercent,
+      resetsAt,
+      windowSeconds,
+      usedValue: usedPercent,
+      limitValue: 100,
+      showPace: false,
+      limited: usedPercent >= 100,
+      nextLabel: "Resets",
+    });
+  }
+
+  for (const [key, label] of [
+    ["autoPercentUsed", "Cursor Models"],
+    ["apiPercentUsed", "Other Models"],
+  ] as const) {
+    const percent = Number(plan[key]);
+    if (!Number.isFinite(percent)) continue;
+    windows.push({
+      provider: "cursor",
+      label,
+      usedPercent: percent,
+      resetsAt,
+      windowSeconds,
+      usedValue: percent,
+      limitValue: 100,
+      showPace: false,
+      limited: percent >= 100,
+      nextLabel: "Resets",
+    });
+  }
+
+  const spend = data?.spendLimitUsage;
+  if (spend && typeof spend === "object") {
+    const limit = Number(spend.individualLimit ?? spend.pooledLimit);
+    const remaining = Number(spend.individualRemaining ?? spend.pooledRemaining);
+    const reportedUsed = Number(
+      spend.individualUsed ?? spend.pooledUsed ?? spend.totalSpend,
+    );
+    const used = Number.isFinite(reportedUsed) && reportedUsed > 0
+      ? reportedUsed
+      : Math.max(0, limit - remaining);
+    if (Number.isFinite(limit) && limit > 0 && Number.isFinite(used)) {
+      windows.push({
+        provider: "cursor",
+        label: "On-demand",
+        usedPercent: safePercent(used, limit),
+        resetsAt,
+        windowSeconds,
+        usedValue: used / 100,
+        limitValue: limit / 100,
+        isCurrency: true,
+        showPace: false,
+        limited: used >= limit,
+        nextLabel: "Resets",
+      });
+    }
+  }
+
+  return windows;
+}

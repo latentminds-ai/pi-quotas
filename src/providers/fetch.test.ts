@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fetchAnthropicQuotasWithToken,
   fetchCodexQuotasWithToken,
+  fetchCursorQuotasWithToken,
   fetchGitHubCopilotQuotas,
   fetchGitHubCopilotQuotasWithToken,
   fetchKimiCodingQuotasWithToken,
@@ -17,6 +18,70 @@ const originalFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = originalFetch;
   vi.restoreAllMocks();
+});
+
+describe("fetchCursorQuotasWithToken", () => {
+  it("exchanges the SDK key, posts to Cursor's Connect endpoint, and parses usage", async () => {
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        accessToken: "cursor-access-token",
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        enabled: true,
+        billingCycleStart: 1769904000000,
+        billingCycleEnd: 1772323200000,
+        planUsage: { limit: 40000, remaining: 32000, totalPercentUsed: 20 },
+      }), { status: 200 })) as any;
+
+    const result = await fetchCursorQuotasWithToken("cursor-sdk-key");
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.provider).toBe("cursor");
+      expect(result.data.windows[0]).toMatchObject({ label: "Plan", usedPercent: 20 });
+    }
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("exchange_user_api_key"),
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer cursor-sdk-key" }),
+      }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("GetCurrentPeriodUsage"),
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer cursor-access-token" }),
+      }),
+    );
+  });
+
+  it("explains that pi-cursor-sdk is required when no key is available", async () => {
+    const result = await fetchCursorQuotasWithToken(undefined);
+    expect(result).toMatchObject({
+      success: false,
+      error: {
+        kind: "config",
+        message: expect.stringContaining("pi-cursor-sdk extension"),
+      },
+    });
+  });
+
+  it("returns a clear config error when the Cursor SDK key is rejected", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: { code: "unauthenticated", message: "Error" },
+    }), { status: 401 })) as any;
+
+    const result = await fetchCursorQuotasWithToken("invalid-token");
+    expect(result).toMatchObject({
+      success: false,
+      error: {
+        kind: "config",
+        message: expect.stringContaining("pi-cursor-sdk"),
+      },
+    });
+  });
 });
 
 describe("fetchAnthropicQuotasWithToken", () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseAnthropicUsage } from "./providers.js";
 import { parseCodexUsage } from "./providers.js";
+import { parseCursorUsage } from "./providers.js";
 import { parseGitHubCopilotUsage } from "./providers.js";
 import { parseKimiCodingUsage } from "./providers.js";
 import { parseOllamaCloudUsage } from "./providers.js";
@@ -9,6 +10,32 @@ import { parseSyntheticUsage } from "./providers.js";
 import { parseXaiUsage } from "./providers.js";
 import { parseZaiUsage } from "./providers.js";
 import { parseOpenCodeGoUsage } from "./providers.js";
+
+describe("parseCursorUsage", () => {
+  it("maps plan, model, and on-demand allowances", () => {
+    const windows = parseCursorUsage({
+      billingCycleStart: "2026-02-01T00:00:00Z",
+      billingCycleEnd: "2026-03-01T00:00:00Z",
+      planUsage: {
+        limit: 40000,
+        remaining: 32000,
+        totalPercentUsed: 20,
+        autoPercentUsed: 12.5,
+        apiPercentUsed: 7.5,
+      },
+      spendLimitUsage: { individualLimit: 5000, individualRemaining: 1000 },
+    });
+
+    expect(windows.map(({ label, usedPercent }) => ({ label, usedPercent }))).toEqual([
+      { label: "Plan", usedPercent: 20 },
+      { label: "Cursor Models", usedPercent: 12.5 },
+      { label: "Other Models", usedPercent: 7.5 },
+      { label: "On-demand", usedPercent: 80 },
+    ]);
+    expect(windows[0].resetsAt.toISOString()).toBe("2026-03-01T00:00:00.000Z");
+    expect(windows[3]).toMatchObject({ isCurrency: true, usedValue: 40, limitValue: 50 });
+  });
+});
 
 describe("parseAnthropicUsage", () => {
   it("maps oauth usage response into quota windows", () => {

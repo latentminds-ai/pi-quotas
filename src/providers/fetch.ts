@@ -7,6 +7,7 @@ import type { QuotasErrorKind, QuotasResult, SupportedQuotaProvider } from "../t
 import {
   parseAnthropicUsage,
   parseCodexUsage,
+  parseCursorUsage,
   parseGitHubCopilotUsage,
   parseKimiCodingUsage,
   parseOllamaCloudUsage,
@@ -563,6 +564,80 @@ export async function fetchXaiQuotas(
   );
 }
 
+const CURSOR_SDK_REQUIRED_MESSAGE =
+  "Cursor quotas require the pi-cursor-sdk extension. Install npm:pi-cursor-sdk, then use /login → Use an API key → Cursor or set CURSOR_API_KEY.";
+
+export async function fetchCursorQuotasWithToken(
+  apiKey: string | undefined,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  if (!apiKey) return failure(CURSOR_SDK_REQUIRED_MESSAGE, "config");
+
+  // pi-cursor-sdk authenticates with a Cursor SDK API key. Exchange it using
+  // the same endpoint as @cursor/sdk before calling the dashboard RPC, which
+  // requires a short-lived access token rather than the original API key.
+  const exchange = await fetchJson(
+    "https://api2.cursor.sh/auth/exchange_user_api_key",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    },
+    signal,
+  );
+  if (!exchange.ok) {
+    if (exchange.status === 401) {
+      return failure(
+        "Cursor SDK API key was rejected. Re-authenticate through pi-cursor-sdk with /login → Use an API key → Cursor.",
+        "config",
+      );
+    }
+    return failure(exchange.message, exchange.kind);
+  }
+
+  const accessToken = exchange.data?.accessToken;
+  if (typeof accessToken !== "string" || !accessToken) {
+    return failure("Cursor API key exchange returned no access token", "http");
+  }
+
+  const result = await fetchJson(
+    "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Connect-Protocol-Version": "1",
+      },
+      body: "{}",
+    },
+    signal,
+  );
+  if (!result.ok) return failure(result.message, result.kind);
+  if (result.data?.enabled === false) {
+    return failure("No active Cursor subscription", "not_applicable");
+  }
+  const windows = parseCursorUsage(result.data);
+  if (windows.length === 0) {
+    return failure("Cursor response contained no supported quota windows", "http");
+  }
+  return success("cursor", windows);
+}
+
+export async function fetchCursorQuotas(
+  authStorage: AuthStorage,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  const apiKey =
+    (await providerAccessToken(authStorage, "cursor")) ??
+    process.env.CURSOR_API_KEY;
+  return fetchCursorQuotasWithToken(apiKey, signal);
+}
+
 export const PROVIDER_FETCHERS = {
   anthropic: fetchAnthropicQuotas,
   "openai-codex": fetchCodexQuotas,
@@ -574,4 +649,5 @@ export const PROVIDER_FETCHERS = {
   "opencode-go": fetchOpenCodeGoQuotas,
   "kimi-coding": fetchKimiCodingQuotas,
   "ollama-cloud": fetchOllamaCloudQuotas,
+  cursor: fetchCursorQuotas,
 } as const;

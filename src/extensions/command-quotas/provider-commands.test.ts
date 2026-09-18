@@ -67,4 +67,11 @@ describe("getProviderCommandInfo", () => {
       title: "Kimi Code Quotas",
     });
   });
+
+  it("maps Cursor to cursor:quotas", () => {
+    expect(getProviderCommandInfo("cursor")).toMatchObject({
+      commandName: "cursor:quotas",
+      title: "Cursor Quotas",
+    });
+  });
 });

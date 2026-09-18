@@ -1,6 +1,6 @@
 # @latentminds/pi-quotas
 
-Quota monitoring for Pi. Shows remaining usage and rate limits for Anthropic, OpenAI Codex, GitHub Copilot, OpenRouter, Synthetic, Grok, Z.ai, OpenCode Go, Kimi Code, and Ollama Cloud — directly in your Pi session.
+Quota monitoring for Pi. Shows remaining usage and rate limits for Anthropic, OpenAI Codex, GitHub Copilot, OpenRouter, Synthetic, Grok, Z.ai, OpenCode Go, Kimi Code, Ollama Cloud, and Cursor — directly in your Pi session.
 
 ## Screenshots
 
@@ -47,6 +47,7 @@ pi -e npm:@latentminds/pi-quotas
 | `/opencode-go:quotas`| OpenCode Go quotas only                    |
 | `/kimi:quotas`       | Kimi Code quotas only                      |
 | `/ollama:quotas`     | Ollama Cloud quotas only                   |
+| `/cursor:quotas`     | Cursor quotas only                         |
 | `/tokens`            | Cross-session token/cost usage            |
 | `/quotas:settings`   | Toggle individual features on or off       |
 
@@ -72,7 +73,7 @@ Automatic notifications when projected usage is on track to exceed limits before
 Use `/quotas:settings` to enable or disable:
 
 - Combined `/quotas` command
-- Per-provider commands (`/anthropic:quotas`, `/codex:quotas`, `/github:quotas`, `/openrouter:quotas`, `/synthetic:quotas`, `/grok:quotas`, `/zai:quotas`, `/opencode-go:quotas`, `/kimi:quotas`, `/ollama:quotas`)
+- Per-provider commands (`/anthropic:quotas`, `/codex:quotas`, `/github:quotas`, `/openrouter:quotas`, `/synthetic:quotas`, `/grok:quotas`, `/zai:quotas`, `/opencode-go:quotas`, `/kimi:quotas`, `/ollama:quotas`, `/cursor:quotas`)
 - Footer status widget
 - Quota warning notifications
 - **Defer to Synthetic** — when both pi-quotas and [pi-synthetic](https://www.npmjs.com/package/@aliou/pi-synthetic) are loaded, pi-quotas hides its own Synthetic footer to avoid showing duplicate quota information. Enabled by default; disable if you prefer to see both footers.
@@ -94,6 +95,7 @@ Settings can be saved globally (`~/.pi/agent/extensions/quotas.json`) or per-pro
 | OpenCode Go    | Rolling 5h, weekly, monthly USD                              | USD spend tracking against tier limits; cross-session token/cost aggregation via the `/tokens` command |
 | Kimi Code      | Rolling 5h, weekly                                           | Coding Plan request allowances with reset times                                                        |
 | Ollama Cloud   | 5h, 7d                                                       | Rolling session (5h) and weekly (7d) usage fractions from the `/api/usage` endpoint                  |
+| Cursor         | Billing cycle, model groups, on-demand                      | Current plan, Cursor/other-model percentages, and optional on-demand spending                        |
 
 
 ## Credentials
@@ -110,8 +112,9 @@ pi-quotas reads existing Pi auth entries from `~/.pi/agent/auth.json`:
 - `opencode-go` — OpenCode Go workspace ID and auth cookie (set the `OPENCODE_GO_WORKSPACE_ID` and `OPENCODE_GO_AUTH_COOKIE` environment variables, or configure them in the OpenCode Go config file)
 - `kimi-coding` — Kimi Code OAuth access token
 - `ollama-cloud` — Ollama Cloud API key (also reads `OLLAMA_API_KEY` if set)
+- `cursor` — Cursor SDK API key configured by [`pi-cursor-sdk`](https://github.com/fitchmultz/pi-cursor-sdk) through Pi auth, or `CURSOR_API_KEY`. The extension exchanges this key through Cursor's SDK auth API before requesting dashboard usage; Cursor Desktop login is not reused.
 
-No additional setup is required - if Pi can use the provider, pi-quotas can check its quotas. For Synthetic, export `SYNTHETIC_API_KEY` in your shell or Pi environment.
+No additional setup is required for native Pi providers. Cursor requires `pi-cursor-sdk`; Synthetic requires `SYNTHETIC_API_KEY` in Pi auth or the environment.
 
 ## Requirements
 

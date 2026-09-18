@@ -70,5 +70,11 @@ export function getProviderCommandInfo(
         commandName: "ollama:quotas",
         title: "Ollama Cloud Quotas",
       };
+    case "cursor":
+      return {
+        provider,
+        commandName: "cursor:quotas",
+        title: "Cursor Quotas",
+      };
   }
 }
