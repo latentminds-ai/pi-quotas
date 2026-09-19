@@ -7,6 +7,7 @@ import {
   fetchGitHubCopilotQuotasWithToken,
   fetchKimiCodingQuotasWithToken,
   fetchOllamaCloudQuotasWithToken,
+  fetchOpenCodeGoQuotas,
   fetchOpenRouterQuotasWithToken,
   fetchSyntheticQuotas,
   fetchXaiQuotasWithToken,
@@ -191,6 +192,96 @@ describe("fetchGitHubCopilotQuotasWithToken", () => {
         headers: expect.objectContaining({ Authorization: "Bearer ghu-refresh-token" }),
       }),
     );
+  });
+});
+
+describe("fetchOpenCodeGoQuotas", () => {
+  const authStorageWithKey = (key: string) =>
+    AuthStorage.inMemory({
+      "opencode-go": { type: "api_key", key },
+    });
+
+  it("uses the stored opencode-go API key for account-wide usage", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          usage: {
+            rolling: {
+              status: "ok",
+              percent: 12,
+              resetsAt: "2026-09-19T05:33:21.907Z",
+            },
+            weekly: {
+              status: "ok",
+              percent: 34,
+              resetsAt: "2026-09-21T00:00:00.000Z",
+            },
+            monthly: {
+              status: "ok",
+              percent: 56,
+              resetsAt: "2026-10-19T00:17:06.000Z",
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+    ) as any;
+
+    const result = await fetchOpenCodeGoQuotas(authStorageWithKey("oc_sk_test"));
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.provider).toBe("opencode-go");
+      expect(
+        result.data.windows.map((window) => [window.label, window.usedPercent]),
+      ).toEqual([
+        ["5h Rolling", 12],
+        ["Weekly", 34],
+        ["Monthly", 56],
+      ]);
+    }
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "https://opencode.ai/zen/go/v1/usage",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer oc_sk_test",
+        }),
+      }),
+    );
+  });
+
+  it("returns a config error when no API key is stored", async () => {
+    const auth = AuthStorage.inMemory({});
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as any;
+
+    const result = await fetchOpenCodeGoQuotas(auth);
+
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "config" },
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the API error when the key is rejected", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          type: "error",
+          error: { type: "AuthError", message: "Unauthorized" },
+        }),
+        { status: 401 },
+      ),
+    ) as any;
+
+    const result = await fetchOpenCodeGoQuotas(authStorageWithKey("oc_sk_bad"));
+
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "http", message: "Unauthorized" },
+    });
   });
 });
 

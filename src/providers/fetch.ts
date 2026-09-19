@@ -14,10 +14,8 @@ import {
   parseSyntheticUsage,
   parseXaiUsage,
   parseZaiUsage,
-  parseOpenCodeGoUsage,
+  parseOpenCodeGoApiUsage,
 } from "./providers.js";
-import { resolveOpenCodeGoConfigCached } from "./opencode-go-config.js";
-import { queryOpenCodeGoQuota } from "./opencode-go.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
 const COPILOT_VERSION = "0.35.0";
@@ -416,35 +414,36 @@ export async function fetchSyntheticQuotas(
   return success("synthetic", parseSyntheticUsage(result.data));
 }
 
+const OPENCODE_GO_USAGE_URL = "https://opencode.ai/zen/go/v1/usage";
+
 export async function fetchOpenCodeGoQuotas(
-  _authStorage: AuthStorage,
+  authStorage: AuthStorage,
   signal?: AbortSignal,
 ): Promise<QuotasResult> {
-  const configResult = await resolveOpenCodeGoConfigCached();
-  if (configResult.state === "none") {
+  // OpenCode Go's usage API is keyed by the API key stored by
+  // `pi /login opencode-go` (or OPENCODE_API_KEY) and returns the same
+  // account-wide rolling/weekly/monthly percents the OpenCode dashboard
+  // shows, so no workspace ID or browser auth cookie is needed.
+  const apiKey = await providerAccessToken(authStorage, "opencode-go");
+  if (!apiKey) {
     return failure(
-      "No OpenCode Go config. Set OPENCODE_GO_WORKSPACE_ID +" +
-        " OPENCODE_GO_AUTH_COOKIE, or create" +
-        " ~/.config/opencode/opencode-quota/opencode-go.json",
-      "config",
-    );
-  }
-  if (configResult.state === "incomplete") {
-    return failure(
-      `OpenCode Go config incomplete: missing ${configResult.missing}`,
-      "config",
-    );
-  }
-  if (configResult.state === "invalid") {
-    return failure(
-      `OpenCode Go config invalid: ${configResult.error}`,
+      "No OpenCode Go API key found. Run `pi /login opencode-go`",
       "config",
     );
   }
 
-  const result = await queryOpenCodeGoQuota(configResult.config, signal);
-  if (!result.success) return failure(result.error, "http");
-  return success("opencode-go", parseOpenCodeGoUsage(result));
+  const result = await fetchJson(
+    OPENCODE_GO_USAGE_URL,
+    {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    },
+    signal,
+  );
+  if (!result.ok) return failure(result.message, result.kind);
+  return success("opencode-go", parseOpenCodeGoApiUsage(result.data));
 }
 
 export async function fetchKimiCodingQuotasWithToken(

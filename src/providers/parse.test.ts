@@ -8,7 +8,7 @@ import { parseOpenRouterUsage } from "./providers.js";
 import { parseSyntheticUsage } from "./providers.js";
 import { parseXaiUsage } from "./providers.js";
 import { parseZaiUsage } from "./providers.js";
-import { parseOpenCodeGoUsage } from "./providers.js";
+import { parseOpenCodeGoApiUsage } from "./providers.js";
 
 describe("parseAnthropicUsage", () => {
   it("maps oauth usage response into quota windows", () => {
@@ -609,72 +609,69 @@ describe("parseSyntheticUsage", () => {
   });
 });
 
-describe("parseOpenCodeGoUsage", () => {
-  it("parses rolling, weekly, and monthly windows", () => {
-    const windows = parseOpenCodeGoUsage({
-      rolling: {
-        usagePercent: 35,
-        resetInSec: 12000,
-        percentRemaining: 65,
-        resetTimeIso: "2026-05-18T22:00:00Z",
-      },
-      weekly: {
-        usagePercent: 62,
-        resetInSec: 500000,
-        percentRemaining: 38,
-        resetTimeIso: "2026-05-25T00:00:00Z",
-      },
-      monthly: {
-        usagePercent: 28,
-        resetInSec: 1200000,
-        percentRemaining: 72,
-        resetTimeIso: "2026-06-01T00:00:00Z",
+describe("parseOpenCodeGoApiUsage", () => {
+  it("maps the usage API's account-wide percents and reset times", () => {
+    const windows = parseOpenCodeGoApiUsage({
+      usage: {
+        rolling: {
+          status: "ok",
+          percent: 12,
+          resetsAt: "2026-09-19T05:33:21.907Z",
+        },
+        weekly: {
+          status: "ok",
+          percent: 34,
+          resetsAt: "2026-09-21T00:00:00.000Z",
+        },
+        monthly: {
+          status: "ok",
+          percent: 56,
+          resetsAt: "2026-10-19T00:17:06.000Z",
+        },
       },
     });
 
     expect(windows).toHaveLength(3);
-
     expect(windows[0]).toMatchObject({
       provider: "opencode-go",
       label: "5h Rolling",
-      usedPercent: 35,
+      usedPercent: 12,
       windowSeconds: 5 * 60 * 60,
     });
-
-    expect(windows[1]).toMatchObject({
-      provider: "opencode-go",
-      label: "Weekly",
-      usedPercent: 62,
-      windowSeconds: 7 * 24 * 60 * 60,
-      showPace: true,
-    });
-
-    expect(windows[2]).toMatchObject({
-      provider: "opencode-go",
-      label: "Monthly",
-      usedPercent: 28,
-      windowSeconds: 30 * 24 * 60 * 60,
-      showPace: true,
-    });
+    expect(windows[0].resetsAt.toISOString()).toBe(
+      "2026-09-19T05:33:21.907Z",
+    );
+    expect(windows[1]).toMatchObject({ label: "Weekly", usedPercent: 34 });
+    expect(windows[2]).toMatchObject({ label: "Monthly", usedPercent: 56 });
   });
 
-  it("handles partial windows", () => {
-    const windows = parseOpenCodeGoUsage({
-      rolling: {
-        usagePercent: 10,
-        resetInSec: 15000,
-        percentRemaining: 90,
-        resetTimeIso: "2026-05-18T21:00:00Z",
+  it("accepts string percents and numeric reset timestamps", () => {
+    const windows = parseOpenCodeGoApiUsage({
+      usage: {
+        rolling: { percent: "25", resetsAt: 1_787_000_000 },
       },
     });
 
     expect(windows).toHaveLength(1);
-    expect(windows[0].label).toBe("5h Rolling");
+    expect(windows[0].usedPercent).toBe(25);
   });
 
-  it("returns empty for no data", () => {
-    const windows = parseOpenCodeGoUsage({});
+  it("skips windows without a usable percent or reset time", () => {
+    const windows = parseOpenCodeGoApiUsage({
+      usage: {
+        rolling: { percent: 10 },
+        weekly: { resetsAt: "2026-09-21T00:00:00.000Z" },
+        monthly: { percent: 20, resetsAt: "not-a-date" },
+      },
+    });
+
     expect(windows).toHaveLength(0);
+  });
+
+  it("returns empty for missing payloads", () => {
+    expect(parseOpenCodeGoApiUsage({})).toHaveLength(0);
+    expect(parseOpenCodeGoApiUsage(null)).toHaveLength(0);
+    expect(parseOpenCodeGoApiUsage({ usage: null })).toHaveLength(0);
   });
 });
 

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Changed
+- **OpenCode Go uses the official usage API**: rolling 5h / weekly / monthly percents and reset times now come from `GET https://opencode.ai/zen/go/v1/usage` using the `opencode-go` API key stored by `pi /login` (or `OPENCODE_API_KEY`). No workspace ID, browser auth cookie, or dashboard HTML scraping is needed. The `OPENCODE_GO_WORKSPACE_ID` / `OPENCODE_GO_AUTH_COOKIE` configuration and `~/.config/opencode/opencode-quota/opencode-go.json` file are no longer read.
+
 ## [0.5.0] - 2026-08-31
 
 ### Added

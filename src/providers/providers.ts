@@ -507,50 +507,88 @@ export function parseSyntheticUsage(data: any): QuotaWindow[] {
   return windows;
 }
 
-export function parseOpenCodeGoUsage(data: {
-  rolling?: {
-    usagePercent: number;
-    resetInSec: number;
-    percentRemaining: number;
-    resetTimeIso: string;
-  };
-  weekly?: {
-    usagePercent: number;
-    resetInSec: number;
-    percentRemaining: number;
-    resetTimeIso: string;
-  };
-  monthly?: {
-    usagePercent: number;
-    resetInSec: number;
-    percentRemaining: number;
-    resetTimeIso: string;
-  };
-}): QuotaWindow[] {
+/**
+ * A single window from the OpenCode Go usage API. `percent` is the
+ * account-wide consumed percentage the OpenCode dashboard shows.
+ */
+interface OpenCodeGoApiWindow {
+  status?: string | null;
+  percent?: number | string | null;
+  resetsAt?: number | string | null;
+}
+
+interface OpenCodeGoApiWindowUsage {
+  usedPercent: number;
+  resetsAt: Date;
+}
+
+function parseOpenCodeGoApiResetTime(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    // Accept epoch seconds or milliseconds.
+    return value < 10_000_000_000 ? value * 1000 : value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const trimmed = value.trim();
+    if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+      return parseOpenCodeGoApiResetTime(Number(trimmed));
+    }
+    const parsed = Date.parse(trimmed);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function parseOpenCodeGoApiWindow(
+  window: OpenCodeGoApiWindow | null | undefined,
+): OpenCodeGoApiWindowUsage | undefined {
+  if (!window || typeof window !== "object") return undefined;
+  const usedPercent = Number(window.percent);
+  const resetMs = parseOpenCodeGoApiResetTime(window.resetsAt);
+  if (!Number.isFinite(usedPercent) || resetMs === undefined) return undefined;
+  const resetsAt = new Date(resetMs);
+  if (Number.isNaN(resetsAt.getTime())) return undefined;
+  return { usedPercent, resetsAt };
+}
+
+/**
+ * Parse the OpenCode Go usage API
+ * (`GET https://opencode.ai/zen/go/v1/usage`, Bearer auth with the
+ * `opencode-go` API key from `pi /login`). Returns the same account-wide
+ * rolling/weekly/monthly percents the OpenCode dashboard displays.
+ */
+export function parseOpenCodeGoApiUsage(data: {
+  usage?: {
+    rolling?: OpenCodeGoApiWindow | null;
+    weekly?: OpenCodeGoApiWindow | null;
+    monthly?: OpenCodeGoApiWindow | null;
+  } | null;
+} | null): QuotaWindow[] {
   const windows: QuotaWindow[] = [];
 
-  if (data.rolling) {
+  const rolling = parseOpenCodeGoApiWindow(data?.usage?.rolling);
+  if (rolling) {
     windows.push({
       provider: "opencode-go",
       label: "5h Rolling",
-      usedPercent: data.rolling.usagePercent,
-      resetsAt: new Date(data.rolling.resetTimeIso),
+      usedPercent: rolling.usedPercent,
+      resetsAt: rolling.resetsAt,
       windowSeconds: 5 * 60 * 60,
-      usedValue: data.rolling.usagePercent,
+      usedValue: rolling.usedPercent,
       limitValue: 100,
       showPace: false,
       nextLabel: "Resets",
     });
   }
 
-  if (data.weekly) {
+  const weekly = parseOpenCodeGoApiWindow(data?.usage?.weekly);
+  if (weekly) {
     windows.push({
       provider: "opencode-go",
       label: "Weekly",
-      usedPercent: data.weekly.usagePercent,
-      resetsAt: new Date(data.weekly.resetTimeIso),
+      usedPercent: weekly.usedPercent,
+      resetsAt: weekly.resetsAt,
       windowSeconds: 7 * 24 * 60 * 60,
-      usedValue: data.weekly.usagePercent,
+      usedValue: weekly.usedPercent,
       limitValue: 100,
       showPace: true,
       paceScale: 1 / 7,
@@ -558,14 +596,15 @@ export function parseOpenCodeGoUsage(data: {
     });
   }
 
-  if (data.monthly) {
+  const monthly = parseOpenCodeGoApiWindow(data?.usage?.monthly);
+  if (monthly) {
     windows.push({
       provider: "opencode-go",
       label: "Monthly",
-      usedPercent: data.monthly.usagePercent,
-      resetsAt: new Date(data.monthly.resetTimeIso),
+      usedPercent: monthly.usedPercent,
+      resetsAt: monthly.resetsAt,
       windowSeconds: 30 * 24 * 60 * 60,
-      usedValue: data.monthly.usagePercent,
+      usedValue: monthly.usedPercent,
       limitValue: 100,
       showPace: true,
       paceScale: 1,

@@ -8,8 +8,11 @@ import {
   QUOTAS_EXTENSIONS_REGISTER_EVENT,
   QUOTAS_EXTENSIONS_REQUEST_EVENT,
   type QuotasConfigUpdatedPayload,
+  type QuotasExtensionsRegisterPayload,
   configLoader,
 } from "../../config.js";
+import { quotaAuthStorage } from "../../lib/auth.js";
+import { fetchProviderQuotas } from "../../lib/quotas.js";
 import { aggregateAllSessions, formatCost } from "../../lib/session-tokens.js";
 
 const EXTENSION_ID = "pi-quotas-token-status";
@@ -97,12 +100,30 @@ function isGoProvider(provider: string | undefined): boolean {
   return provider === "opencode-go" || provider.startsWith("opencode-go/");
 }
 
-function createTokenStatusRefresher() {
+function createTokenStatusRefresher(getUsageStatusEnabled: () => boolean) {
   let refreshTimer: ReturnType<typeof setInterval> | undefined;
   let activeContext: ExtensionContext | undefined;
   let lastCosts: RollingWindowCosts | undefined;
   let inFlight = false;
   let queued = false;
+
+  /**
+   * Whether the account-wide OpenCode Go usage API can report the real
+   * plan usage. When it can, the usage-status footer already shows the
+   * percents, so this local estimate stays hidden to avoid two conflicting
+   * usage readouts.
+   */
+  async function hasRealUsage(ctx: ExtensionContext): Promise<boolean> {
+    try {
+      const quota = await fetchProviderQuotas(
+        quotaAuthStorage(ctx.modelRegistry),
+        "opencode-go",
+      );
+      return quota.success;
+    } catch {
+      return false;
+    }
+  }
 
   async function update(ctx: ExtensionContext): Promise<void> {
     if (!ctx.hasUI) return;
@@ -112,6 +133,12 @@ function createTokenStatusRefresher() {
     }
     inFlight = true;
     try {
+      if (getUsageStatusEnabled() && (await hasRealUsage(ctx))) {
+        if (!ctx.hasUI) return;
+        lastCosts = undefined;
+        ctx.ui.setStatus(EXTENSION_ID, undefined);
+        return;
+      }
       const costs = await computeRollingCosts(ctx.cwd);
       if (!ctx.hasUI) return;
       lastCosts = costs;
@@ -167,9 +194,19 @@ function createTokenStatusRefresher() {
 
 export default async function (pi: ExtensionAPI) {
   await configLoader.load();
-  const refresher = createTokenStatusRefresher();
+  let usageStatusEnabled = configLoader.getConfig().usageStatus;
+  /** Set once the usage-status extension registers for this session. */
+  let usageStatusLoaded = false;
+  const refresher = createTokenStatusRefresher(
+    () => usageStatusEnabled && usageStatusLoaded,
+  );
   let enabled = configLoader.getConfig().tokenStatus;
   let currentContext: ExtensionContext | undefined;
+
+  pi.events.on(QUOTAS_EXTENSIONS_REGISTER_EVENT, (data: unknown) => {
+    const { feature } = data as QuotasExtensionsRegisterPayload;
+    if (feature === "usageStatus") usageStatusLoaded = true;
+  });
 
   function scheduleRefresh(ctx: ExtensionContext): void {
     void refresher.refreshFor(ctx).catch(() => {
@@ -184,6 +221,7 @@ export default async function (pi: ExtensionAPI) {
   pi.events.on(QUOTAS_CONFIG_UPDATED_EVENT, (data: unknown) => {
     const config = (data as QuotasConfigUpdatedPayload).config;
     enabled = config.tokenStatus;
+    usageStatusEnabled = config.usageStatus;
     if (!enabled) {
       refresher.stop(currentContext);
       return;
