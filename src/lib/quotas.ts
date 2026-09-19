@@ -13,6 +13,7 @@ export const SUPPORTED_PROVIDERS: SupportedQuotaProvider[] = [
   "opencode-go",
   "kimi-coding",
   "ollama-cloud",
+  "minimax-global",
 ];
 
 export const PROVIDER_LABELS: Record<SupportedQuotaProvider, string> = {
@@ -26,6 +27,7 @@ export const PROVIDER_LABELS: Record<SupportedQuotaProvider, string> = {
   "opencode-go": "OpenCode Go",
   "kimi-coding": "Kimi Code",
   "ollama-cloud": "Ollama Cloud",
+  "minimax-global": "MiniMax Global",
 };
 
 const PROVIDER_TTLS_MS: Record<SupportedQuotaProvider, number> = {
@@ -39,6 +41,7 @@ const PROVIDER_TTLS_MS: Record<SupportedQuotaProvider, number> = {
   "opencode-go": 60_000,
   "kimi-coding": 60_000,
   "ollama-cloud": 60_000,
+  "minimax-global": 60_000,
 };
 
 type CacheEntry = {
@@ -87,6 +90,28 @@ export function isSupportedProvider(
   provider: string | undefined,
 ): provider is SupportedQuotaProvider {
   return SUPPORTED_PROVIDERS.includes(provider as SupportedQuotaProvider);
+}
+
+/**
+ * pi provider IDs that map to a differently named quota provider.
+ *
+ * pi exposes MiniMax as `minimax` (global platform) and `minimax-cn` (China),
+ * while the quota provider is registered as `minimax-global`.
+ */
+const PI_PROVIDER_ALIASES: Record<string, SupportedQuotaProvider> = {
+  minimax: "minimax-global",
+};
+
+/**
+ * Resolve the active model's pi provider ID to a quota provider.
+ * Returns undefined when the provider has no quota support.
+ */
+export function resolveQuotaProvider(
+  provider: string | undefined,
+): SupportedQuotaProvider | undefined {
+  if (!provider) return undefined;
+  if (isSupportedProvider(provider)) return provider;
+  return PI_PROVIDER_ALIASES[provider];
 }
 
 export function clearQuotaCache(provider?: SupportedQuotaProvider): void {

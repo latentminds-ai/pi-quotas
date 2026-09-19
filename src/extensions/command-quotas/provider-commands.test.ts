@@ -67,4 +67,11 @@ describe("getProviderCommandInfo", () => {
       title: "Kimi Code Quotas",
     });
   });
+
+  it("maps MiniMax Global to minimax:quotas", () => {
+    expect(getProviderCommandInfo("minimax-global")).toMatchObject({
+      commandName: "minimax:quotas",
+      title: "MiniMax Global Quotas",
+    });
+  });
 });

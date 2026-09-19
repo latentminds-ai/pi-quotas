@@ -18,13 +18,13 @@ interface SyntheticExtensionsRegisterPayload {
 import { quotaAuthStorage } from "../../lib/auth.js";
 import {
   fetchProviderQuotas,
-  isSupportedProvider,
+  resolveQuotaProvider,
 } from "../../lib/quotas.js";
 import {
   assessWindow,
   formatTimeRemaining,
 } from "../../utils/quotas-severity.js";
-import type { QuotaWindow } from "../../types/quotas.js";
+import type { QuotaWindow, SupportedQuotaProvider } from "../../types/quotas.js";
 import { formatWindowStatus, type WindowStatus } from "./format-status.js";
 
 const EXTENSION_ID = "pi-quotas-usage";
@@ -104,7 +104,7 @@ export function formatStatusForFooter(
 function createStatusRefresher() {
   let refreshTimer: ReturnType<typeof setInterval> | undefined;
   let activeContext: ExtensionContext | undefined;
-  let activeProvider: string | undefined;
+  let activeProvider: SupportedQuotaProvider | undefined;
   let lastStatus: WindowStatus[] | undefined;
   let inFlight = false;
   let queued = false;
@@ -146,7 +146,7 @@ function createStatusRefresher() {
     inFlight = true;
     try {
       if (requestGeneration !== generation || activeContext !== ctx) return;
-      if (!ctx.hasUI || !activeProvider || !isSupportedProvider(activeProvider)) return;
+      if (!ctx.hasUI || !activeProvider) return;
 
       const provider = activeProvider;
       const result = await fetchProviderQuotas(quotaAuthStorage(ctx.modelRegistry), provider);
@@ -185,10 +185,10 @@ function createStatusRefresher() {
   return {
     async refreshFor(ctx: ExtensionContext): Promise<void> {
       activeContext = ctx;
-      activeProvider = getContextProvider(ctx);
+      activeProvider = resolveQuotaProvider(getContextProvider(ctx));
       generation++;
       const requestGeneration = generation;
-      if (!activeProvider || !isSupportedProvider(activeProvider)) {
+      if (!activeProvider) {
         setStatusSafely(ctx, undefined);
         return;
       }

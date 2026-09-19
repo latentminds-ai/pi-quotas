@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+- **MiniMax Global provider**: rolling five-hour and weekly Coding Plan quotas from the Global API, using Pi auth or `MINIMAX_CODING_API_KEY` / `MINIMAX_API_KEY`.
+
+### Fixed
+- **MiniMax footer status**: pi exposes MiniMax as `minimax`, while the quota provider is named `minimax-global`, so the footer status and quota warnings were suppressed for `minimax/*` models even though the quota API worked. Provider IDs are now resolved to their quota provider before the support check.
+
 ## [0.5.0] - 2026-08-31
 
 ### Added

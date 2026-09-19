@@ -1,7 +1,7 @@
 import type { AuthStorage } from "@mariozechner/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { QuotasResult } from "../types/quotas.js";
-import { clearQuotaCache, fetchProviderQuotas } from "./quotas.js";
+import { clearQuotaCache, fetchProviderQuotas, resolveQuotaProvider } from "./quotas.js";
 
 const successResult: QuotasResult = {
   success: true,
@@ -81,5 +81,22 @@ describe("fetchProviderQuotas", () => {
     const result = await fetchProviderQuotas(authStorage, "kimi-coding");
 
     expect(result).toBe(successResult);
+  });
+});
+
+describe("resolveQuotaProvider", () => {
+  it("passes through supported quota providers", () => {
+    expect(resolveQuotaProvider("anthropic")).toBe("anthropic");
+    expect(resolveQuotaProvider("minimax-global")).toBe("minimax-global");
+  });
+
+  it("maps pi's minimax provider to the minimax-global quota provider", () => {
+    expect(resolveQuotaProvider("minimax")).toBe("minimax-global");
+  });
+
+  it("returns undefined for unsupported or missing providers", () => {
+    expect(resolveQuotaProvider("minimax-cn")).toBeUndefined();
+    expect(resolveQuotaProvider("unsupported-provider")).toBeUndefined();
+    expect(resolveQuotaProvider(undefined)).toBeUndefined();
   });
 });

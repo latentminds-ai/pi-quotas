@@ -6,6 +6,7 @@ import {
   fetchGitHubCopilotQuotas,
   fetchGitHubCopilotQuotasWithToken,
   fetchKimiCodingQuotasWithToken,
+  fetchMinimaxGlobalQuotasWithToken,
   fetchOllamaCloudQuotasWithToken,
   fetchOpenRouterQuotasWithToken,
   fetchSyntheticQuotas,
@@ -17,6 +18,37 @@ const originalFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = originalFetch;
   vi.restoreAllMocks();
+});
+
+describe("fetchMinimaxGlobalQuotasWithToken", () => {
+  it("falls back to the coding-plan endpoint and parses both windows", async () => {
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        base_resp: { status_code: 1001, status_msg: "unsupported endpoint" },
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          model_remains: [{
+            model_name: "MiniMax-M2",
+            current_interval_remaining_percent: 25,
+            current_weekly_remaining_percent: 80,
+          }],
+        },
+      }), { status: 200 })) as any;
+
+    const result = await fetchMinimaxGlobalQuotasWithToken("sk-cp-test");
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.provider).toBe("minimax-global");
+      expect(result.data.windows.map((window) => window.usedPercent)).toEqual([75, 20]);
+    }
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns config error when the Coding Plan key is missing", async () => {
+    const result = await fetchMinimaxGlobalQuotasWithToken(undefined);
+    expect(result).toMatchObject({ success: false, error: { kind: "config" } });
+  });
 });
 
 describe("fetchAnthropicQuotasWithToken", () => {

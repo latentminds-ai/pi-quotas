@@ -12,8 +12,8 @@ import {
 import { quotaAuthStorage } from "../../lib/auth.js";
 import {
   fetchProviderQuotas,
-  isSupportedProvider,
   PROVIDER_LABELS,
+  resolveQuotaProvider,
 } from "../../lib/quotas.js";
 import {
   assessWindow,
@@ -54,8 +54,8 @@ export default async function (pi: ExtensionAPI) {
   let enabled = configLoader.getConfig().quotaWarnings;
   let currentContext: ExtensionContext | undefined;
   async function check(ctx: ExtensionContext, onlyNew: boolean): Promise<void> {
-    const provider = ctx.model?.provider;
-    if (!ctx.hasUI || !provider || !isSupportedProvider(provider)) return;
+    const provider = resolveQuotaProvider(ctx.model?.provider);
+    if (!ctx.hasUI || !provider) return;
     const now = Date.now();
     if (onlyNew && now - lastFetchAt < MIN_FETCH_INTERVAL_MS) return;
     lastFetchAt = now;

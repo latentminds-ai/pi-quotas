@@ -21,7 +21,11 @@ vi.mock("../../config.js", () => ({
 }));
 
 vi.mock("../../lib/quotas.js", () => ({
-  isSupportedProvider: (provider: string | undefined) => provider === "anthropic",
+  resolveQuotaProvider: (provider: string | undefined) => {
+    if (provider === "anthropic") return "anthropic";
+    if (provider === "minimax") return "minimax-global";
+    return undefined;
+  },
   fetchProviderQuotas: vi.fn(async () => ({
     success: true,
     data: { provider: "anthropic", windows: [] },
@@ -157,6 +161,21 @@ describe("usage-status extension lifecycle", () => {
     expect(listenerCount("quotas:config:updated")).toBe(0);
     expect(listenerCount("synthetic:extensions:register")).toBe(0);
     expect(listenerCount("quotas:extensions:request")).toBe(0);
+  });
+
+  it("resolves pi's minimax provider to the minimax-global quota provider", async () => {
+    const { pi, emitExtensionEvent } = createFakePi();
+    const { ctx } = createContext("minimax");
+
+    await usageStatusExtension(pi);
+    await emitExtensionEvent("session_start", ctx);
+
+    await vi.waitFor(() => {
+      expect(fetchProviderQuotas).toHaveBeenCalledWith(
+        expect.anything(),
+        "minimax-global",
+      );
+    });
   });
 
   it("clears the footer silently for not_applicable credentials instead of warning", async () => {

@@ -876,3 +876,80 @@ export function parseXaiUsage(data: any): QuotaWindow[] {
 
   return windows;
 }
+
+function minimaxResetAt(endTime: unknown, remainsTime: unknown): Date {
+  const end = Number(endTime);
+  if (Number.isFinite(end) && end > 1_000_000_000) {
+    return new Date(end > 1_000_000_000_000 ? end : end * 1000);
+  }
+  const remaining = Number(remainsTime);
+  if (Number.isFinite(remaining) && remaining > 0) {
+    const seconds = remaining > 1_000_000 ? remaining / 1000 : remaining;
+    return new Date(Date.now() + seconds * 1000);
+  }
+  return new Date(0);
+}
+
+function minimaxWindow(entries: any[], weekly: boolean): QuotaWindow | undefined {
+  const percentKey = weekly
+    ? "current_weekly_remaining_percent"
+    : "current_interval_remaining_percent";
+  const totalKey = weekly
+    ? "current_weekly_total_count"
+    : "current_interval_total_count";
+  // Despite its name, MiniMax's usage_count field contains remaining quota.
+  const remainingKey = weekly
+    ? "current_weekly_usage_count"
+    : "current_interval_usage_count";
+  const withPercent = entries.filter((entry) =>
+    Number.isFinite(Number(entry?.[percentKey])),
+  );
+  // Token Plan may include image/video buckets alongside coding models. Prefer
+  // text-generation buckets so a media allowance is never labelled as coding.
+  const textEntries = withPercent.filter((entry) => {
+    const name = String(entry?.model_name ?? "").toLowerCase();
+    return !/(video|image|speech|audio|music)/.test(name);
+  });
+  const candidate = (textEntries.length > 0 ? textEntries : withPercent)
+    .sort((a, b) => Number(a[percentKey]) - Number(b[percentKey]))[0];
+  if (!candidate) return undefined;
+
+  const remainingPercent = Number(candidate[percentKey]);
+  const usedPercent = Math.max(0, Math.min(100, 100 - remainingPercent));
+  const total = Number(candidate[totalKey]);
+  const remaining = Number(candidate[remainingKey]);
+  const hasCounts = Number.isFinite(total) && total > 0 && Number.isFinite(remaining);
+  const start = Number(candidate[weekly ? "weekly_start_time" : "start_time"]);
+  const end = Number(candidate[weekly ? "weekly_end_time" : "end_time"]);
+  const epochScale = start > 1_000_000_000_000 || end > 1_000_000_000_000 ? 1000 : 1;
+  const measuredSeconds = (end - start) / epochScale;
+  const windowSeconds = Number.isFinite(measuredSeconds) && measuredSeconds > 0
+    ? Math.round(measuredSeconds)
+    : weekly ? 7 * 24 * 60 * 60 : 5 * 60 * 60;
+
+  return {
+    provider: "minimax-global",
+    label: weekly ? "Weekly" : "5h",
+    usedPercent,
+    resetsAt: minimaxResetAt(
+      candidate[weekly ? "weekly_end_time" : "end_time"],
+      candidate[weekly ? "weekly_remains_time" : "remains_time"],
+    ),
+    windowSeconds,
+    usedValue: hasCounts ? Math.max(0, total - remaining) : usedPercent,
+    limitValue: hasCounts ? total : 100,
+    showPace: false,
+    limited: usedPercent >= 100,
+    nextLabel: "Resets",
+  };
+}
+
+/** MiniMax Global Coding Plan rolling and weekly allowances. */
+export function parseMinimaxGlobalUsage(data: any): QuotaWindow[] {
+  const entries = Array.isArray(data?.data?.model_remains)
+    ? data.data.model_remains
+    : Array.isArray(data?.model_remains) ? data.model_remains : [];
+  return [minimaxWindow(entries, false), minimaxWindow(entries, true)].filter(
+    (window): window is QuotaWindow => window !== undefined,
+  );
+}
