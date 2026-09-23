@@ -2,7 +2,7 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import globals from "globals";
 
-// Linting configuration for @latentminds/pi-quotas.
+// Linting configuration for @terrydada-art/pi-quotas.
 //
 // This config codifies the existing repo style as the enforced default so that
 // contributions are checked consistently before merge:

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.1] - 2026-09-22
+
+### Changed
+- **Package scope**: the maintained fork is now published as `@terrydada-art/pi-quotas`; npm install and repository metadata now point to `terrydada-art/pi-quotas`.
+
+### Fixed
+- **OpenCode Go quota retrieval**: quota checks now use the official `GET /zen/go/v1/usage` endpoint with the `opencode-go` API key already stored by Pi, avoiding dependence on the changing dashboard HTML for normal operation.
+- **OpenCode Go dashboard fallback**: cookie-based fallback now tries the current `/console/{workspaceId}/go` route first and retains `/workspace/{workspaceId}/go` as a legacy fallback. Both HTTP failures and unparseable redesigned pages fall through safely.
+- **OpenCode Go error handling**: API error responses are reduced to concise messages without exposing the API key.
+
 ## [0.5.0] - 2026-08-31
 
 ### Added

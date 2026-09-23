@@ -17,7 +17,10 @@ import {
   parseOpenCodeGoUsage,
 } from "./providers.js";
 import { resolveOpenCodeGoConfigCached } from "./opencode-go-config.js";
-import { queryOpenCodeGoQuota } from "./opencode-go.js";
+import {
+  queryOpenCodeGoQuota,
+  queryOpenCodeGoQuotaWithApiKey,
+} from "./opencode-go.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
 const COPILOT_VERSION = "0.35.0";
@@ -417,25 +420,39 @@ export async function fetchSyntheticQuotas(
 }
 
 export async function fetchOpenCodeGoQuotas(
-  _authStorage: AuthStorage,
+  authStorage: AuthStorage,
   signal?: AbortSignal,
 ): Promise<QuotasResult> {
+  let apiFailure: QuotasResult | undefined;
+  const apiKey = await providerAccessToken(authStorage, "opencode-go");
+  if (apiKey) {
+    const apiResult = await queryOpenCodeGoQuotaWithApiKey(apiKey, signal);
+    if (apiResult.success) {
+      return success("opencode-go", parseOpenCodeGoUsage(apiResult));
+    }
+    apiFailure = failure(apiResult.error, "http");
+  }
+
   const configResult = await resolveOpenCodeGoConfigCached();
   if (configResult.state === "none") {
+    if (apiFailure) return apiFailure;
     return failure(
-      "No OpenCode Go config. Set OPENCODE_GO_WORKSPACE_ID +" +
+      "No OpenCode Go API key or dashboard config. Log in to the" +
+        " opencode-go provider, set OPENCODE_GO_WORKSPACE_ID +" +
         " OPENCODE_GO_AUTH_COOKIE, or create" +
         " ~/.config/opencode/opencode-quota/opencode-go.json",
       "config",
     );
   }
   if (configResult.state === "incomplete") {
+    if (apiFailure) return apiFailure;
     return failure(
       `OpenCode Go config incomplete: missing ${configResult.missing}`,
       "config",
     );
   }
   if (configResult.state === "invalid") {
+    if (apiFailure) return apiFailure;
     return failure(
       `OpenCode Go config invalid: ${configResult.error}`,
       "config",
@@ -443,7 +460,9 @@ export async function fetchOpenCodeGoQuotas(
   }
 
   const result = await queryOpenCodeGoQuota(configResult.config, signal);
-  if (!result.success) return failure(result.error, "http");
+  if (!result.success) {
+    return apiFailure ?? failure(result.error, "http");
+  }
   return success("opencode-go", parseOpenCodeGoUsage(result));
 }
 

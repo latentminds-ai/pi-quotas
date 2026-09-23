@@ -5,7 +5,7 @@ Thanks for your interest in contributing! Here's how to get started.
 ## Development setup
 
 ```bash
-git clone https://github.com/latentminds/pi-quotas.git
+git clone https://github.com/terrydada-art/pi-quotas.git
 cd pi-quotas
 npm install
 ```

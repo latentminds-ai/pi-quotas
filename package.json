@@ -1,6 +1,7 @@
 {
-  "name": "@latentminds/pi-quotas",
-  "version": "0.5.0",
+  "name": "@terrydada-art/pi-quotas",
+  "version": "0.5.1",
+  "description": "Quota monitoring for Pi across OpenAI Codex, OpenCode Go, Anthropic, GitHub Copilot, and other providers.",
   "license": "MIT",
   "type": "module",
   "private": false,
@@ -12,7 +13,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/latentminds-ai/pi-quotas"
+    "url": "git+https://github.com/terrydada-art/pi-quotas.git"
+  },
+  "homepage": "https://github.com/terrydada-art/pi-quotas#readme",
+  "bugs": {
+    "url": "https://github.com/terrydada-art/pi-quotas/issues"
   },
   "pi": {
     "extensions": [
@@ -23,7 +28,7 @@
       "./src/extensions/token-status/index.ts",
       "./src/extensions/quota-warnings/index.ts"
     ],
-    "image": "https://raw.githubusercontent.com/latentminds-ai/pi-quotas/main/docs/quotas-dashboard.png"
+    "image": "https://raw.githubusercontent.com/terrydada-art/pi-quotas/main/docs/quotas-dashboard.png"
   },
   "files": [
     "src",

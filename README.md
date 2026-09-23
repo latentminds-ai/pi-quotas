@@ -1,4 +1,4 @@
-# @latentminds/pi-quotas
+# @terrydada-art/pi-quotas
 
 Quota monitoring for Pi. Shows remaining usage and rate limits for Anthropic, OpenAI Codex, GitHub Copilot, OpenRouter, Synthetic, Grok, Z.ai, OpenCode Go, Kimi Code, and Ollama Cloud — directly in your Pi session.
 
@@ -15,20 +15,20 @@ Quota monitoring for Pi. Shows remaining usage and rate limits for Anthropic, Op
 **From npm** (recommended):
 
 ```bash
-pi install npm:@latentminds/pi-quotas
+pi install npm:@terrydada-art/pi-quotas
 ```
 
 **From source:**
 
 ```bash
-git clone https://github.com/latentminds-ai/pi-quotas.git
+git clone https://github.com/terrydada-art/pi-quotas.git
 pi install ./pi-quotas
 ```
 
 **Try without installing:**
 
 ```bash
-pi -e npm:@latentminds/pi-quotas
+pi -e npm:@terrydada-art/pi-quotas
 ```
 
 ## Commands
@@ -91,7 +91,7 @@ Settings can be saved globally (`~/.pi/agent/extensions/quotas.json`) or per-pro
 | Synthetic      | Subscription, search/hour, free tools, weekly tokens, 5h limit | Request counts and token budgets; rolling five-hour rate limit; weekly token regen                  |
 | Grok           | Weekly credits, per-product usage, on-demand spend              | SuperGrok credit usage from the xAI CLI billing endpoint                                             |
 | Z.ai           | 5h, 7d, monthly web searches                                  | Token utilisation percentages (rolling 5h/7d windows); monthly web-search count limit               |
-| OpenCode Go    | Rolling 5h, weekly, monthly USD                              | USD spend tracking against tier limits; cross-session token/cost aggregation via the `/tokens` command |
+| OpenCode Go    | Rolling 5h, weekly, monthly USD                              | Official usage API with dashboard fallback; USD spend tracking against tier limits; cross-session token/cost aggregation via `/tokens` |
 | Kimi Code      | Rolling 5h, weekly                                           | Coding Plan request allowances with reset times                                                        |
 | Ollama Cloud   | 5h, 7d                                                       | Rolling session (5h) and weekly (7d) usage fractions from the `/api/usage` endpoint                  |
 
@@ -107,7 +107,7 @@ pi-quotas reads existing Pi auth entries from `~/.pi/agent/auth.json`:
 - `synthetic` — Synthetic API key (set the `SYNTHETIC_API_KEY` environment variable)
 - `xai` — Grok/xAI OAuth access token
 - `zai` — Z.ai (Zhipu AI / GLM Coding Plan) API key
-- `opencode-go` — OpenCode Go workspace ID and auth cookie (set the `OPENCODE_GO_WORKSPACE_ID` and `OPENCODE_GO_AUTH_COOKIE` environment variables, or configure them in the OpenCode Go config file)
+- `opencode-go` — OpenCode Go API key. Quotas are read from the official `/zen/go/v1/usage` endpoint using the key already stored by Pi. For legacy dashboard fallback, optionally set `OPENCODE_GO_WORKSPACE_ID` and `OPENCODE_GO_AUTH_COOKIE`, or configure them in `~/.config/opencode/opencode-quota/opencode-go.json`.
 - `kimi-coding` — Kimi Code OAuth access token
 - `ollama-cloud` — Ollama Cloud API key (also reads `OLLAMA_API_KEY` if set)
 

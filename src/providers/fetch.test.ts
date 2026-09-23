@@ -7,6 +7,7 @@ import {
   fetchGitHubCopilotQuotasWithToken,
   fetchKimiCodingQuotasWithToken,
   fetchOllamaCloudQuotasWithToken,
+  fetchOpenCodeGoQuotas,
   fetchOpenRouterQuotasWithToken,
   fetchSyntheticQuotas,
   fetchXaiQuotasWithToken,
@@ -430,6 +431,55 @@ describe("fetchOllamaCloudQuotasWithToken", () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: "Bearer ollama-key",
+        }),
+      }),
+    );
+  });
+});
+
+describe("fetchOpenCodeGoQuotas", () => {
+  it("uses the stored provider API key with the official usage endpoint", async () => {
+    const authStorage = {
+      getApiKey: vi.fn().mockResolvedValue("opencode-go-key"),
+    } as unknown as AuthStorage;
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          usage: {
+            rolling: {
+              status: "ok",
+              percent: 12,
+              resetsAt: "2026-09-22T09:00:00.000Z",
+            },
+            weekly: {
+              status: "ok",
+              percent: 34,
+              resetsAt: "2026-09-28T00:00:00.000Z",
+            },
+            monthly: {
+              status: "ok",
+              percent: 56,
+              resetsAt: "2026-10-01T00:00:00.000Z",
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+    ) as any;
+
+    const result = await fetchOpenCodeGoQuotas(authStorage);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.provider).toBe("opencode-go");
+      expect(result.data.windows).toHaveLength(3);
+    }
+    expect(authStorage.getApiKey).toHaveBeenCalledWith("opencode-go");
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "https://opencode.ai/zen/go/v1/usage",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer opencode-go-key",
         }),
       }),
     );
