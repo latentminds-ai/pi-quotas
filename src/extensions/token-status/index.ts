@@ -99,58 +99,46 @@ function isGoProvider(provider: string | undefined): boolean {
 
 function createTokenStatusRefresher() {
   let refreshTimer: ReturnType<typeof setInterval> | undefined;
-  let activeContext: ExtensionContext | undefined;
   let lastCosts: RollingWindowCosts | undefined;
+  let currentCwd: string | undefined;
   let inFlight = false;
-  let queued = false;
 
-  async function update(ctx: ExtensionContext): Promise<void> {
-    if (!ctx.hasUI) return;
-    if (inFlight) {
-      queued = true;
-      return;
-    }
+  async function refreshCosts(cwd?: string): Promise<void> {
+    if (inFlight) return;
     inFlight = true;
     try {
-      const costs = await computeRollingCosts(ctx.cwd);
-      if (!ctx.hasUI) return;
-      lastCosts = costs;
-      const status = formatTokenStatus(ctx.ui.theme, costs);
-      ctx.ui.setStatus(EXTENSION_ID, status);
+      // This work may outlive the session that requested it. Keep it UI-free;
+      // status rendering is done synchronously by the next live lifecycle event.
+      lastCosts = await computeRollingCosts(cwd);
     } catch {
-      ctx.ui.setStatus(
-        EXTENSION_ID,
-        ctx.ui.theme.fg("warning", "token tracking unavailable"),
-      );
+      // Keep the last known costs if aggregation temporarily fails.
     } finally {
       inFlight = false;
-      if (queued) {
-        queued = false;
-        void update(ctx);
-      }
     }
   }
 
   return {
     async refreshFor(ctx: ExtensionContext): Promise<void> {
-      activeContext = ctx;
       if (!isGoProvider(ctx.model?.provider)) {
         ctx.ui.setStatus(EXTENSION_ID, undefined);
         return;
       }
-      await update(ctx);
+      if (ctx.hasUI) {
+        if (lastCosts) {
+          ctx.ui.setStatus(EXTENSION_ID, formatTokenStatus(ctx.ui.theme, lastCosts));
+        }
+      }
+      currentCwd = ctx.cwd;
+      void refreshCosts(currentCwd);
     },
     start(): void {
       if (refreshTimer) clearInterval(refreshTimer);
-      refreshTimer = setInterval(() => {
-        if (activeContext) void update(activeContext);
-      }, REFRESH_INTERVAL_MS);
+      refreshTimer = setInterval(() => void refreshCosts(currentCwd), REFRESH_INTERVAL_MS);
       refreshTimer.unref?.();
     },
     stop(ctx?: ExtensionContext): void {
       if (refreshTimer) clearInterval(refreshTimer);
       refreshTimer = undefined;
-      activeContext = undefined;
       lastCosts = undefined;
       ctx?.ui.setStatus(EXTENSION_ID, undefined);
     },
@@ -169,7 +157,6 @@ export default async function (pi: ExtensionAPI) {
   await configLoader.load();
   const refresher = createTokenStatusRefresher();
   let enabled = configLoader.getConfig().tokenStatus;
-  let currentContext: ExtensionContext | undefined;
 
   function scheduleRefresh(ctx: ExtensionContext): void {
     void refresher.refreshFor(ctx).catch(() => {
@@ -185,17 +172,13 @@ export default async function (pi: ExtensionAPI) {
     const config = (data as QuotasConfigUpdatedPayload).config;
     enabled = config.tokenStatus;
     if (!enabled) {
-      refresher.stop(currentContext);
-      return;
-    }
-    if (currentContext) {
+      refresher.stop();
+    } else {
       refresher.start();
-      scheduleRefresh(currentContext);
     }
   });
 
   pi.on("session_start", (_event, ctx) => {
-    currentContext = ctx;
     if (!enabled) return;
     if (!isGoProvider(ctx.model?.provider)) {
       ctx.ui.setStatus(EXTENSION_ID, undefined);
@@ -206,14 +189,12 @@ export default async function (pi: ExtensionAPI) {
   });
 
   pi.on("turn_end", (_event, ctx) => {
-    currentContext = ctx;
     if (!enabled) return;
     if (!isGoProvider(ctx.model?.provider)) return;
     scheduleRefresh(ctx);
   });
 
   pi.on("model_select", (_event, ctx) => {
-    currentContext = ctx;
     if (!enabled) {
       refresher.stop(ctx);
       return;
@@ -227,7 +208,6 @@ export default async function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
-    currentContext = undefined;
     refresher.stop(ctx);
   });
 
