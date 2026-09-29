@@ -18,13 +18,13 @@ interface SyntheticExtensionsRegisterPayload {
 import { quotaAuthStorage } from "../../lib/auth.js";
 import {
   fetchProviderQuotas,
-  isSupportedProvider,
+  quotaSourceForModelProvider,
 } from "../../lib/quotas.js";
 import {
   assessWindow,
   formatTimeRemaining,
 } from "../../utils/quotas-severity.js";
-import type { QuotaWindow } from "../../types/quotas.js";
+import type { QuotaSource, QuotaWindow } from "../../types/quotas.js";
 import { formatWindowStatus, type WindowStatus } from "./format-status.js";
 
 const EXTENSION_ID = "pi-quotas-usage";
@@ -69,7 +69,10 @@ const ANTHROPIC_SUBSCRIPTION_WINDOW_LABELS = new Set([
   "7d Opus (legacy)",
 ]);
 
-function shouldShowInStatus(window: QuotaWindow): boolean {
+function shouldShowInStatus(window: QuotaWindow, source?: QuotaSource): boolean {
+  // pi-claude-bridge has no other place that shows the subscription windows,
+  // so keep them in the footer for claude-bridge models.
+  if (source === "claude-bridge") return true;
   return !(
     window.provider === "anthropic" &&
     ANTHROPIC_SUBSCRIPTION_WINDOW_LABELS.has(window.label)
@@ -89,8 +92,13 @@ export function toWindowStatus(window: QuotaWindow): WindowStatus {
   };
 }
 
-export function toStatusWindows(windows: QuotaWindow[]): WindowStatus[] {
-  return windows.filter(shouldShowInStatus).map(toWindowStatus);
+export function toStatusWindows(
+  windows: QuotaWindow[],
+  source?: QuotaSource,
+): WindowStatus[] {
+  return windows
+    .filter((window) => shouldShowInStatus(window, source))
+    .map(toWindowStatus);
 }
 
 export function formatStatusForFooter(
@@ -104,7 +112,7 @@ export function formatStatusForFooter(
 function createStatusRefresher() {
   let refreshTimer: ReturnType<typeof setInterval> | undefined;
   let activeContext: ExtensionContext | undefined;
-  let activeProvider: string | undefined;
+  let activeSource: QuotaSource | undefined;
   let lastStatus: WindowStatus[] | undefined;
   let inFlight = false;
   let queued = false;
@@ -117,7 +125,7 @@ function createStatusRefresher() {
     if (refreshTimer) clearInterval(refreshTimer);
     refreshTimer = undefined;
     activeContext = undefined;
-    activeProvider = undefined;
+    activeSource = undefined;
     lastStatus = undefined;
     queued = false;
     generation++;
@@ -146,10 +154,10 @@ function createStatusRefresher() {
     inFlight = true;
     try {
       if (requestGeneration !== generation || activeContext !== ctx) return;
-      if (!ctx.hasUI || !activeProvider || !isSupportedProvider(activeProvider)) return;
+      if (!ctx.hasUI || !activeSource) return;
 
-      const provider = activeProvider;
-      const result = await fetchProviderQuotas(quotaAuthStorage(ctx.modelRegistry), provider);
+      const source = activeSource;
+      const result = await fetchProviderQuotas(quotaAuthStorage(ctx.modelRegistry), source);
       if (requestGeneration !== generation || activeContext !== ctx) return;
 
       if (!result.success) {
@@ -163,7 +171,7 @@ function createStatusRefresher() {
         setStatusSafely(ctx, (ctx) => ctx.ui.theme.fg("warning", "usage unavailable"));
         return;
       }
-      const windows: WindowStatus[] = toStatusWindows(result.data.windows);
+      const windows: WindowStatus[] = toStatusWindows(result.data.windows, source);
       const status = formatStatusForFooter(ctx, windows);
       lastStatus = status === undefined ? undefined : windows;
       setStatusSafely(ctx, status);
@@ -185,10 +193,10 @@ function createStatusRefresher() {
   return {
     async refreshFor(ctx: ExtensionContext): Promise<void> {
       activeContext = ctx;
-      activeProvider = getContextProvider(ctx);
+      activeSource = quotaSourceForModelProvider(getContextProvider(ctx));
       generation++;
       const requestGeneration = generation;
-      if (!activeProvider || !isSupportedProvider(activeProvider)) {
+      if (!activeSource) {
         setStatusSafely(ctx, undefined);
         return;
       }

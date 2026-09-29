@@ -2,6 +2,11 @@ import { AuthStorage } from "@mariozechner/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerQuotasCommands } from "./command.js";
 
+// Keep a Claude Code login on the host from leaking into these tests.
+vi.mock("../../lib/claude-code-auth.js", () => ({
+  readClaudeCodeLogin: () => ({ status: "missing" }),
+}));
+
 // Provider credentials can leak in from the host environment (pi resolves
 // API keys from env vars, and the Synthetic provider reads
 // SYNTHETIC_API_KEY directly), which would turn these "no credentials"

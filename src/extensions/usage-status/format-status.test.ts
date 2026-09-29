@@ -223,6 +223,34 @@ describe("formatWindowStatus", () => {
     expect(windows[0]).toMatchObject({ label: "Extra (USD)" });
   });
 
+  it("keeps Anthropic subscription windows in the footer for claude-bridge models", () => {
+    const windows = toStatusWindows(
+      [
+        {
+          provider: "anthropic",
+          label: "5h",
+          usedPercent: 10,
+          resetsAt: new Date("2026-05-06T07:47:37Z"),
+          windowSeconds: 5 * 60 * 60,
+          usedValue: 10,
+          limitValue: 100,
+        },
+        {
+          provider: "anthropic",
+          label: "7d",
+          usedPercent: 20,
+          resetsAt: new Date("2026-05-06T07:47:37Z"),
+          windowSeconds: 7 * 24 * 60 * 60,
+          usedValue: 20,
+          limitValue: 100,
+        },
+      ],
+      "claude-bridge",
+    );
+
+    expect(windows.map((w) => w.label)).toEqual(["5h", "7d"]);
+  });
+
   it("does not prefix elapsed reset times with in", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-06T05:28:37Z"));

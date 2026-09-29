@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **pi-claude-bridge support**: when the active model's provider is `claude-bridge`, the footer status and quota warnings show the Anthropic subscription windows using Claude Code's own login (macOS keychain, or `~/.claude/.credentials.json`). `/anthropic:quotas` and `/quotas` fall back to the same login when Pi has no Anthropic OAuth token. The Claude Code token is never refreshed; an expired login asks you to open Claude Code instead. Suggested by the pi-claude-bridge maintainer in [elidickinson/pi-claude-bridge#132](https://github.com/elidickinson/pi-claude-bridge/pull/132).
+
 ## [0.5.0] - 2026-08-31
 
 ### Added

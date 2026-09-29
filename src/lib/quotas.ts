@@ -1,6 +1,10 @@
 import type { AuthStorage } from "@mariozechner/pi-coding-agent";
 import { PROVIDER_FETCHERS } from "../providers/fetch.js";
-import type { QuotasResult, SupportedQuotaProvider } from "../types/quotas.js";
+import type {
+  QuotaSource,
+  QuotasResult,
+  SupportedQuotaProvider,
+} from "../types/quotas.js";
 
 export const SUPPORTED_PROVIDERS: SupportedQuotaProvider[] = [
   "anthropic",
@@ -28,8 +32,9 @@ export const PROVIDER_LABELS: Record<SupportedQuotaProvider, string> = {
   "ollama-cloud": "Ollama Cloud",
 };
 
-const PROVIDER_TTLS_MS: Record<SupportedQuotaProvider, number> = {
+const PROVIDER_TTLS_MS: Record<QuotaSource, number> = {
   anthropic: 5 * 60_000,
+  "claude-bridge": 5 * 60_000,
   "openai-codex": 60_000,
   "github-copilot": 5 * 60_000,
   openrouter: 60_000,
@@ -47,7 +52,7 @@ type CacheEntry = {
   inFlight?: Promise<QuotasResult>;
 };
 
-const cache = new Map<SupportedQuotaProvider, CacheEntry>();
+const cache = new Map<QuotaSource, CacheEntry>();
 
 /**
  * Convert an unexpected throw from a provider fetcher into a failure result.
@@ -58,7 +63,7 @@ const cache = new Map<SupportedQuotaProvider, CacheEntry>();
  * pi, so it must be contained here.
  */
 function toFailureResult(
-  provider: SupportedQuotaProvider,
+  source: QuotaSource,
   err: unknown,
 ): QuotasResult {
   const message = err instanceof Error ? err.message : String(err);
@@ -69,7 +74,7 @@ function toFailureResult(
     return {
       success: false,
       error: {
-        message: `${PROVIDER_LABELS[provider]} OAuth token refresh failed — re-authenticate with /login`,
+        message: `${PROVIDER_LABELS[quotaProviderForSource(source)]} OAuth token refresh failed — re-authenticate with /login`,
         kind: "config",
       },
     };
@@ -89,14 +94,33 @@ export function isSupportedProvider(
   return SUPPORTED_PROVIDERS.includes(provider as SupportedQuotaProvider);
 }
 
-export function clearQuotaCache(provider?: SupportedQuotaProvider): void {
+/**
+ * Map the active model's provider to the quota source that reports its usage.
+ * pi-claude-bridge models (`claude-bridge`) run on the Claude Code login, so
+ * they report the Anthropic subscription through that login.
+ */
+export function quotaSourceForModelProvider(
+  provider: string | undefined,
+): QuotaSource | undefined {
+  if (provider === "claude-bridge") return "claude-bridge";
+  return isSupportedProvider(provider) ? provider : undefined;
+}
+
+/** The provider whose quota windows a source reports. */
+export function quotaProviderForSource(
+  source: QuotaSource,
+): SupportedQuotaProvider {
+  return source === "claude-bridge" ? "anthropic" : source;
+}
+
+export function clearQuotaCache(provider?: QuotaSource): void {
   if (provider) cache.delete(provider);
   else cache.clear();
 }
 
 export async function fetchProviderQuotas(
   authStorage: AuthStorage,
-  provider: SupportedQuotaProvider,
+  provider: QuotaSource,
   options?: { force?: boolean; signal?: AbortSignal },
 ): Promise<QuotasResult> {
   const entry = cache.get(provider) ?? {};

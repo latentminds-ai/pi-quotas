@@ -1,7 +1,10 @@
 import { AuthStorage } from "@mariozechner/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ClaudeCodeLogin } from "../lib/claude-code-auth.js";
 import {
+  fetchAnthropicQuotas,
   fetchAnthropicQuotasWithToken,
+  fetchClaudeBridgeQuotas,
   fetchCodexQuotasWithToken,
   fetchGitHubCopilotQuotas,
   fetchGitHubCopilotQuotasWithToken,
@@ -58,6 +61,159 @@ describe("fetchAnthropicQuotasWithToken", () => {
       expect(result.data.provider).toBe("anthropic");
       expect(result.data.windows).toHaveLength(2);
     }
+  });
+});
+
+const ANTHROPIC_USAGE = {
+  five_hour: { utilization: 21, resets_at: "2026-04-22T18:30:00Z" },
+  seven_day: { utilization: 9, resets_at: "2026-04-25T08:30:00Z" },
+};
+
+function mockAnthropicUsage() {
+  const fetchSpy = vi.fn(async () =>
+    new Response(JSON.stringify(ANTHROPIC_USAGE), { status: 200 }),
+  );
+  globalThis.fetch = fetchSpy as any;
+  return fetchSpy;
+}
+
+function authorizationOf(fetchSpy: ReturnType<typeof vi.fn>): string | null {
+  const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
+  return new Headers(init?.headers).get("authorization");
+}
+
+function authWithAnthropicToken(token: string | undefined): AuthStorage {
+  return { getApiKey: async () => token } as unknown as AuthStorage;
+}
+
+const claudeCodeLogin = (): ClaudeCodeLogin => ({
+  status: "ok",
+  accessToken: "sk-ant-oat01-claude-code",
+  source: "file",
+});
+
+describe("fetchClaudeBridgeQuotas", () => {
+  it("fetches Anthropic usage with the Claude Code login", async () => {
+    const fetchSpy = mockAnthropicUsage();
+
+    const result = await fetchClaudeBridgeQuotas(
+      authWithAnthropicToken(undefined),
+      undefined,
+      claudeCodeLogin,
+    );
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.provider).toBe("anthropic");
+      expect(result.data.windows.map((w) => w.label)).toEqual(["5h", "7d"]);
+    }
+    expect(authorizationOf(fetchSpy)).toBe("Bearer sk-ant-oat01-claude-code");
+  });
+
+  it("asks the user to open Claude Code when its login expired", async () => {
+    const fetchSpy = mockAnthropicUsage();
+
+    const result = await fetchClaudeBridgeQuotas(
+      authWithAnthropicToken(undefined),
+      undefined,
+      () => ({ status: "expired", source: "keychain" }),
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "config", message: expect.stringContaining("open Claude Code") },
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("reports a missing Claude Code login as a config error", async () => {
+    const fetchSpy = mockAnthropicUsage();
+
+    const result = await fetchClaudeBridgeQuotas(
+      authWithAnthropicToken(undefined),
+      undefined,
+      () => ({ status: "missing" }),
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "config", message: expect.stringContaining("Claude Code login") },
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("fetchAnthropicQuotas", () => {
+  it("prefers Pi's own Anthropic OAuth token over the Claude Code login", async () => {
+    const fetchSpy = mockAnthropicUsage();
+    const readLogin = vi.fn(claudeCodeLogin);
+
+    const result = await fetchAnthropicQuotas(
+      authWithAnthropicToken("sk-ant-oat01-pi"),
+      undefined,
+      readLogin,
+    );
+
+    expect(result.success).toBe(true);
+    expect(authorizationOf(fetchSpy)).toBe("Bearer sk-ant-oat01-pi");
+    expect(readLogin).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the Claude Code login without a Pi token", async () => {
+    const fetchSpy = mockAnthropicUsage();
+
+    const result = await fetchAnthropicQuotas(
+      authWithAnthropicToken(undefined),
+      undefined,
+      claudeCodeLogin,
+    );
+
+    expect(result.success).toBe(true);
+    expect(authorizationOf(fetchSpy)).toBe("Bearer sk-ant-oat01-claude-code");
+  });
+
+  it("keeps a direct API key not applicable without using Claude Code", async () => {
+    const fetchSpy = mockAnthropicUsage();
+    const readLogin = vi.fn(claudeCodeLogin);
+
+    const result = await fetchAnthropicQuotas(
+      authWithAnthropicToken("sk-ant-api03-direct-key"),
+      undefined,
+      readLogin,
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "not_applicable" },
+    });
+    expect(readLogin).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("reports an expired Claude Code login when it is the only credential", async () => {
+    const result = await fetchAnthropicQuotas(
+      authWithAnthropicToken(undefined),
+      undefined,
+      () => ({ status: "expired", source: "file" }),
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "config", message: expect.stringContaining("open Claude Code") },
+    });
+  });
+
+  it("keeps the no-token config error when no login exists anywhere", async () => {
+    const result = await fetchAnthropicQuotas(
+      authWithAnthropicToken(undefined),
+      undefined,
+      () => ({ status: "missing" }),
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "config", message: "No Anthropic OAuth token found" },
+    });
   });
 });
 

@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AuthStorage } from "@mariozechner/pi-coding-agent";
+import {
+  readClaudeCodeLogin,
+  type ClaudeCodeLogin,
+} from "../lib/claude-code-auth.js";
 import type { QuotasErrorKind, QuotasResult, SupportedQuotaProvider } from "../types/quotas.js";
 import {
   parseAnthropicUsage,
@@ -318,14 +322,47 @@ export async function fetchGitHubCopilotQuotasWithToken(
   return failure(directUsage.message, directUsage.kind);
 }
 
+const CLAUDE_CODE_EXPIRED_MESSAGE =
+  "Claude Code login expired — open Claude Code to refresh it";
+
+/**
+ * Anthropic subscription quotas for pi-claude-bridge models, using Claude
+ * Code's own login rather than a Pi auth entry.
+ */
+export async function fetchClaudeBridgeQuotas(
+  _authStorage: AuthStorage,
+  signal?: AbortSignal,
+  readLogin: () => ClaudeCodeLogin = readClaudeCodeLogin,
+): Promise<QuotasResult> {
+  const login = readLogin();
+  if (login.status === "expired")
+    return failure(CLAUDE_CODE_EXPIRED_MESSAGE, "config");
+  if (login.status === "missing")
+    return failure(
+      "No Claude Code login found — sign in with `claude` first",
+      "config",
+    );
+  return fetchAnthropicQuotasWithToken(login.accessToken, signal);
+}
+
 export async function fetchAnthropicQuotas(
   authStorage: AuthStorage,
   signal?: AbortSignal,
+  readLogin: () => ClaudeCodeLogin = readClaudeCodeLogin,
 ): Promise<QuotasResult> {
-  return fetchAnthropicQuotasWithToken(
-    await providerAccessToken(authStorage, "anthropic"),
-    signal,
-  );
+  // Pi's own Anthropic credential keeps priority. A direct API key keeps its
+  // silent "not applicable" result rather than borrowing Claude Code's login.
+  const piToken = await providerAccessToken(authStorage, "anthropic");
+  if (piToken) return fetchAnthropicQuotasWithToken(piToken, signal);
+
+  // Without one, fall back to the login Claude Code (and pi-claude-bridge)
+  // uses, so the subscription still shows up in the dashboards.
+  const login = readLogin();
+  if (login.status === "ok")
+    return fetchAnthropicQuotasWithToken(login.accessToken, signal);
+  if (login.status === "expired")
+    return failure(CLAUDE_CODE_EXPIRED_MESSAGE, "config");
+  return fetchAnthropicQuotasWithToken(undefined, signal);
 }
 
 export async function fetchCodexQuotas(
@@ -574,4 +611,5 @@ export const PROVIDER_FETCHERS = {
   "opencode-go": fetchOpenCodeGoQuotas,
   "kimi-coding": fetchKimiCodingQuotas,
   "ollama-cloud": fetchOllamaCloudQuotas,
+  "claude-bridge": fetchClaudeBridgeQuotas,
 } as const;

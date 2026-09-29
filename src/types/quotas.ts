@@ -10,6 +10,13 @@ export type SupportedQuotaProvider =
   | "kimi-coding"
   | "ollama-cloud";
 
+/**
+ * Where a quota fetch gets its credentials. `claude-bridge` reports the
+ * Anthropic subscription through Claude Code's own login, for models served
+ * by pi-claude-bridge.
+ */
+export type QuotaSource = SupportedQuotaProvider | "claude-bridge";
+
 export type QuotasErrorKind =
   | "cancelled"
   | "timeout"
