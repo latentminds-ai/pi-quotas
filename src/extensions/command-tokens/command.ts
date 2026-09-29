@@ -5,10 +5,36 @@ import type {
 import { aggregateAllSessions } from "../../lib/session-tokens.js";
 import { TokensComponent } from "./tokens-display.js";
 
+function isRpcContext(ctx: ExtensionCommandContext): boolean {
+  return (ctx as ExtensionCommandContext & { mode?: string }).mode === "rpc";
+}
+
 async function openTokensView(
   ctx: ExtensionCommandContext,
   cwd?: string,
 ): Promise<void> {
+  if (isRpcContext(ctx)) {
+    try {
+      const aggregateResult = await aggregateAllSessions({ cwd });
+      const { totals } = aggregateResult;
+      const lines = [
+        `Token Usage: ${aggregateResult.sessionCount} sessions, ${aggregateResult.messageCount} messages`,
+        `  Input: ${totals.input.toLocaleString()} · Output: ${totals.output.toLocaleString()}`,
+        `  Cache Read: ${totals.cacheRead.toLocaleString()} · Cache Write: ${totals.cacheWrite.toLocaleString()}`,
+        `  Total: ${totals.totalTokens.toLocaleString()} tokens · $${totals.costTotal.toFixed(2)}`,
+      ];
+      for (const model of aggregateResult.byModel) {
+        lines.push(
+          `  ${model.provider}/${model.model}: $${model.tokens.costTotal.toFixed(2)} (${model.messageCount} msgs)`,
+        );
+      }
+      ctx.ui.notify(lines.join("\n"), "info");
+    } catch {
+      ctx.ui.notify("Token usage unavailable", "warning");
+    }
+    return;
+  }
+
   const result = await ctx.ui.custom<null>((tui, theme, _kb, done) => {
     const controller = new AbortController();
     const component = new TokensComponent(

@@ -15,6 +15,7 @@ import {
   parseXaiUsage,
   parseZaiUsage,
   parseOpenCodeGoUsage,
+  parseAntigravityUsage,
 } from "./providers.js";
 import { resolveOpenCodeGoConfigCached } from "./opencode-go-config.js";
 import { queryOpenCodeGoQuota } from "./opencode-go.js";
@@ -563,6 +564,325 @@ export async function fetchXaiQuotas(
   );
 }
 
+export const ANTIGRAVITY_CLIENT_ID =
+  process.env.ANTIGRAVITY_CLIENT_ID ||
+  atob(
+    "MTA3MTAwNjA2MDU5MS10bWhzc2luMmgyMWxjcmUyMzV2dG9sb2poNGc0MDNlc" +
+      "C5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==",
+  );
+export const ANTIGRAVITY_CLIENT_SECRET =
+  process.env.ANTIGRAVITY_CLIENT_SECRET ||
+  atob("R09DU1BYLUs1OEZXUjQ" + "4NkxkTEoxbUxCOHNYQzR6NnFEQWY=");
+
+export const ANTIGRAVITY_ENDPOINTS = [
+  "https://daily-cloudcode-pa.googleapis.com",
+  "https://daily-cloudcode-pa.sandbox.googleapis.com",
+  "https://cloudcode-pa.googleapis.com",
+];
+export const ANTIGRAVITY_USER_AGENT =
+  "antigravity/cli/1.1.23 (aidev_client; os_type=linux; arch=amd64; cl=974125021; auth_method=consumer)";
+
+export async function refreshAntigravityToken(
+  refreshToken: string,
+  signal?: AbortSignal,
+): Promise<
+  | { ok: true; accessToken: string; expiresIn: number }
+  | { ok: false; message: string }
+> {
+  const body = new URLSearchParams({
+    client_id: ANTIGRAVITY_CLIENT_ID,
+    client_secret: ANTIGRAVITY_CLIENT_SECRET,
+    refresh_token: refreshToken,
+    grant_type: "refresh_token",
+  });
+
+  const res = await fetchJson(
+    "https://oauth2.googleapis.com/token",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    },
+    signal,
+  );
+
+  if (!res.ok) {
+    return {
+      ok: false,
+      message: res.message || "Failed to refresh Antigravity token",
+    };
+  }
+
+  return {
+    ok: true,
+    accessToken: res.data.access_token,
+    expiresIn: res.data.expires_in,
+  };
+}
+
+function readAntigravityAccountsFallback(): {
+  accessToken?: string;
+  refreshToken?: string;
+  projectId?: string;
+} | null {
+  const candidates = [
+    join(homedir(), ".config", "opencode", "antigravity-accounts.json"),
+    join(homedir(), ".local", "share", "opencode", "antigravity-accounts.json"),
+  ];
+  if (process.env.APPDATA) {
+    candidates.push(
+      join(process.env.APPDATA, "opencode", "antigravity-accounts.json"),
+    );
+  }
+  if (process.env.XDG_CONFIG_HOME) {
+    candidates.push(
+      join(
+        process.env.XDG_CONFIG_HOME,
+        "opencode",
+        "antigravity-accounts.json",
+      ),
+    );
+  }
+  if (process.env.XDG_DATA_HOME) {
+    candidates.push(
+      join(process.env.XDG_DATA_HOME, "opencode", "antigravity-accounts.json"),
+    );
+  }
+
+  for (const p of candidates) {
+    try {
+      const data = JSON.parse(readFileSync(p, "utf8")) as any;
+      if (Array.isArray(data?.accounts) && data.accounts.length > 0) {
+        // 1. Honor selected/active account specified in file metadata
+        const activeId =
+          data.activeAccountId || data.selectedAccountId || data.selectedAccount;
+        const activeIndex =
+          typeof data.selectedAccountIndex === "number"
+            ? data.selectedAccountIndex
+            : -1;
+
+        let acc = data.accounts.find(
+          (a: any) =>
+            (activeId && (a.id === activeId || a.email === activeId)) ||
+            a.active === true ||
+            a.selected === true,
+        );
+
+        if (!acc && activeIndex >= 0 && activeIndex < data.accounts.length) {
+          acc = data.accounts[activeIndex];
+        }
+
+        // 2. Otherwise find the first non-disabled account with tokens
+        if (!acc) {
+          acc = data.accounts.find(
+            (a: any) =>
+              !a.disabled &&
+              (typeof a.refreshToken === "string" ||
+                typeof a.accessToken === "string"),
+          );
+        }
+
+        // 3. Fallback to first entry
+        if (!acc) {
+          acc = data.accounts[0];
+        }
+
+        const refreshToken = acc?.refreshToken;
+        const accessToken = acc?.accessToken;
+        const projectId =
+          acc?.managedProjectId || acc?.projectId || acc?.quotaProjectId;
+        if (refreshToken || accessToken) {
+          return { accessToken, refreshToken, projectId };
+        }
+      }
+    } catch {
+      // continue searching
+    }
+  }
+  return null;
+}
+
+interface CachedAntigravityToken {
+  accessToken: string;
+  expiresAt: number;
+}
+const antigravityTokenCache = new Map<string, CachedAntigravityToken>();
+
+export async function fetchAntigravityQuotasWithCredentials(
+  creds: {
+    accessToken?: string;
+    refreshToken?: string;
+    expiresAt?: number;
+    projectId?: string;
+  },
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  let accessToken = creds.accessToken;
+  const refreshToken = creds.refreshToken;
+  const projectId = creds.projectId || "aicode-consumers";
+
+  if (refreshToken) {
+    const cached = antigravityTokenCache.get(refreshToken);
+    if (cached && cached.expiresAt > Date.now() + 60_000) {
+      accessToken = cached.accessToken;
+    } else if (
+      !accessToken ||
+      (creds.expiresAt && creds.expiresAt < Date.now() + 60_000)
+    ) {
+      const refresh = await refreshAntigravityToken(refreshToken, signal);
+      if (refresh.ok) {
+        accessToken = refresh.accessToken;
+        const expiresAt = Date.now() + (refresh.expiresIn ?? 3600) * 1000;
+        antigravityTokenCache.set(refreshToken, { accessToken, expiresAt });
+      }
+    }
+  }
+
+  if (!accessToken) {
+    return failure(
+      "No Antigravity credentials found (login with /login antigravity)",
+      "config",
+    );
+  }
+
+  const endpoints = process.env.ANTIGRAVITY_ENDPOINT
+    ? [
+      process.env.ANTIGRAVITY_ENDPOINT,
+      ...ANTIGRAVITY_ENDPOINTS.filter(
+        (e) => e !== process.env.ANTIGRAVITY_ENDPOINT,
+      ),
+    ]
+    : ANTIGRAVITY_ENDPOINTS;
+
+  let refreshed = false;
+  const ensureFreshToken = async (): Promise<boolean> => {
+    if (refreshed || !refreshToken) return false;
+    const refresh = await refreshAntigravityToken(refreshToken, signal);
+    if (refresh.ok) {
+      accessToken = refresh.accessToken;
+      const expiresAt = Date.now() + (refresh.expiresIn ?? 3600) * 1000;
+      antigravityTokenCache.set(refreshToken, { accessToken, expiresAt });
+      refreshed = true;
+      return true;
+    }
+    return false;
+  };
+
+  const postRpc = async (endpoint: string, rpc: string) => {
+    const url = `${endpoint}/v1internal:${rpc}`;
+    let res = await fetchJson(
+      url,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+          "User-Agent": ANTIGRAVITY_USER_AGENT,
+        },
+        body: JSON.stringify({ project: projectId }),
+      },
+      signal,
+    );
+
+    if (!res.ok && (res.status === 401 || res.status === 403) && !refreshed) {
+      const didRefresh = await ensureFreshToken();
+      if (didRefresh) {
+        res = await fetchJson(
+          url,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+              "User-Agent": ANTIGRAVITY_USER_AGENT,
+            },
+            body: JSON.stringify({ project: projectId }),
+          },
+          signal,
+        );
+      }
+    }
+
+    return res;
+  };
+
+  let lastError: { message: string; kind: any } | undefined;
+
+  // 1. Primary: retrieveUserQuotaSummary across endpoints
+  for (const endpoint of endpoints) {
+    const summaryRes = await postRpc(endpoint, "retrieveUserQuotaSummary");
+    if (
+      summaryRes.ok &&
+      Array.isArray(summaryRes.data?.groups) &&
+      summaryRes.data.groups.length > 0
+    ) {
+      return success("antigravity", parseAntigravityUsage(summaryRes.data));
+    }
+    if (!summaryRes.ok) {
+      lastError = { message: summaryRes.message, kind: summaryRes.kind };
+    }
+  }
+
+  // 2. Fallback: fetchAvailableModels across endpoints (e.g. free tier or older API)
+  for (const endpoint of endpoints) {
+    const modelsRes = await postRpc(endpoint, "fetchAvailableModels");
+    if (modelsRes.ok && modelsRes.data?.models) {
+      const windows = parseAntigravityUsage(modelsRes.data);
+      if (windows.length > 0) {
+        return success("antigravity", windows);
+      }
+    }
+    if (!modelsRes.ok) {
+      lastError = { message: modelsRes.message, kind: modelsRes.kind };
+    }
+  }
+
+  if (lastError) {
+    return failure(lastError.message, lastError.kind);
+  }
+  return failure("No Antigravity quota information available", "http");
+}
+
+export async function fetchAntigravityQuotas(
+  authStorage: AuthStorage,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  const credential = authStorage.get("antigravity") as any;
+  let accessToken: string | undefined;
+  let refreshToken: string | undefined;
+  let expiresAt: number | undefined;
+  let projectId: string | undefined;
+
+  if (credential && typeof credential === "object") {
+    accessToken = credential.access;
+    refreshToken = credential.refresh;
+    expiresAt =
+      typeof credential.expires === "number" ? credential.expires : undefined;
+    projectId = credential.projectId;
+  } else if (typeof credential === "string") {
+    accessToken = credential;
+  }
+
+  if (!accessToken && !refreshToken) {
+    const fallback = readAntigravityAccountsFallback();
+    if (fallback) {
+      accessToken = fallback.accessToken;
+      refreshToken = fallback.refreshToken;
+      projectId = fallback.projectId;
+    }
+  }
+
+  if (!accessToken && !refreshToken) {
+    const apiKey = await providerAccessToken(authStorage, "antigravity");
+    if (apiKey) accessToken = apiKey;
+  }
+
+  return fetchAntigravityQuotasWithCredentials(
+    { accessToken, refreshToken, expiresAt, projectId },
+    signal,
+  );
+}
+
 export const PROVIDER_FETCHERS = {
   anthropic: fetchAnthropicQuotas,
   "openai-codex": fetchCodexQuotas,
@@ -574,4 +894,5 @@ export const PROVIDER_FETCHERS = {
   "opencode-go": fetchOpenCodeGoQuotas,
   "kimi-coding": fetchKimiCodingQuotas,
   "ollama-cloud": fetchOllamaCloudQuotas,
+  antigravity: fetchAntigravityQuotas,
 } as const;

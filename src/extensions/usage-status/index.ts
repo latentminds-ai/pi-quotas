@@ -47,7 +47,7 @@ function getContextProvider(ctx: ExtensionContext | undefined): string | undefin
 
 function formatFooterResetTime(resetsAt: string): string {
   const remaining = formatTimeRemaining(new Date(resetsAt));
-  return remaining === "now" ? "now" : `in ${remaining}`;
+  return `(${remaining})`;
 }
 
 export function formatStatus(ctx: Pick<ExtensionContext, "ui">, windows: WindowStatus[]): string {
@@ -55,10 +55,13 @@ export function formatStatus(ctx: Pick<ExtensionContext, "ui">, windows: WindowS
   return windows
     .map((w) => {
       const core = formatWindowStatus(theme, w);
-      const reset = w.resetsAt ? theme.fg("dim", ` (↺${formatFooterResetTime(w.resetsAt)})`) : "";
+      const hasUsage = w.usedPercent > 0 || (w.usedValue != null && w.usedValue > 0);
+      const shouldShowReset = w.resetsAt && (hasUsage || w.severity !== "none");
+      const resetTime = shouldShowReset ? formatFooterResetTime(w.resetsAt!) : "";
+      const reset = resetTime ? theme.fg("dim", ` ${resetTime}`) : "";
       return `${core}${reset}`;
     })
-    .join(" ");
+    .join(theme.fg("dim", " · "));
 }
 
 const ANTHROPIC_SUBSCRIPTION_WINDOW_LABELS = new Set([

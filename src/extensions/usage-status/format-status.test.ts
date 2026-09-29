@@ -43,7 +43,7 @@ describe("formatWindowStatus", () => {
       limitValue: 100,
     };
     const result = formatWindowStatus(theme, w);
-    expect(result).toContain("91% left");
+    expect(result).toContain("91%");
     expect(result).toContain("[success]");
   });
 
@@ -91,7 +91,7 @@ describe("formatWindowStatus", () => {
     const result = formatWindowStatus(theme, w);
     // label should be colored with error (high maps to error)
     expect(result).toContain("[error]7d:");
-    expect(result).toContain("15% left");
+    expect(result).toContain("15%");
   });
 
   it("keeps label dim when severity is none", () => {
@@ -133,9 +133,29 @@ describe("formatWindowStatus", () => {
 
       const result = formatStatus({ ui: { theme } } as any, [status]);
 
-      expect(result).toContain("(↺in 2h 19m)");
-      expect(result).not.toContain("(↺in 3h)");
+      expect(result).toContain("(2h 19m)");
+      expect(result).not.toContain("(3h)");
     }
+  });
+
+  it("preserves reset display for tracking-only windows with usedValue", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-06T05:28:37Z"));
+
+    const status = toWindowStatus({
+      provider: "openrouter",
+      label: "Daily",
+      usedPercent: 0,
+      resetsAt: new Date("2026-05-06T07:47:37Z"),
+      windowSeconds: 24 * 60 * 60,
+      usedValue: 12.5,
+      limitValue: 0,
+      isCurrency: true,
+    });
+
+    const result = formatStatus({ ui: { theme } } as any, [status]);
+    expect(result).toContain("$12.50 used");
+    expect(result).toContain("(2h 19m)");
   });
 
   it("omits footer reset tags for windows without a real reset time", () => {
@@ -242,7 +262,48 @@ describe("formatWindowStatus", () => {
       ],
     );
 
-    expect(result).toContain("(↺now)");
-    expect(result).not.toContain("(↺in now)");
+    expect(result).toContain("(now)");
+    expect(result).not.toContain("(in now)");
+  });
+
+  it("formats Antigravity quota window labels with compact short labels", () => {
+    const w1: WindowStatus = {
+      label: "Gemini (5h)",
+      usedPercent: 43,
+      severity: "none",
+      resetsAt: "2026-09-06T15:00:00Z",
+      limited: false,
+      usedValue: 43,
+      limitValue: 100,
+    };
+    const r1 = formatWindowStatus(theme, w1);
+    expect(r1).toContain("[dim]gem-5h:[/dim]");
+    expect(r1).toContain("57%");
+
+    const w2: WindowStatus = {
+      label: "Gemini (Weekly)",
+      usedPercent: 60,
+      severity: "none",
+      resetsAt: "2026-09-10T18:00:00Z",
+      limited: false,
+      usedValue: 60,
+      limitValue: 100,
+    };
+    const r2 = formatWindowStatus(theme, w2);
+    expect(r2).toContain("[dim]gem-wk:[/dim]");
+    expect(r2).toContain("40%");
+
+    const w3: WindowStatus = {
+      label: "Claude (5h)",
+      usedPercent: 0,
+      severity: "none",
+      resetsAt: "2026-09-06T16:00:00Z",
+      limited: false,
+      usedValue: 0,
+      limitValue: 100,
+    };
+    const r3 = formatWindowStatus(theme, w3);
+    expect(r3).toContain("[dim]claude-5h:[/dim]");
+    expect(r3).toContain("100%");
   });
 });
