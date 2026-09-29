@@ -118,15 +118,20 @@ function createTokenStatusRefresher() {
       const status = formatTokenStatus(ctx.ui.theme, costs);
       ctx.ui.setStatus(EXTENSION_ID, status);
     } catch {
-      ctx.ui.setStatus(
-        EXTENSION_ID,
-        ctx.ui.theme.fg("warning", "token tracking unavailable"),
-      );
+      try {
+        if (ctx.hasUI)
+          ctx.ui.setStatus(
+            EXTENSION_ID,
+            ctx.ui.theme.fg("warning", "token tracking unavailable"),
+          );
+      } catch {
+        // Session may have been replaced while the aggregation was running.
+      }
     } finally {
       inFlight = false;
       if (queued) {
         queued = false;
-        void update(ctx);
+        if (activeContext) void update(activeContext);
       }
     }
   }
@@ -173,11 +178,15 @@ export default async function (pi: ExtensionAPI) {
 
   function scheduleRefresh(ctx: ExtensionContext): void {
     void refresher.refreshFor(ctx).catch(() => {
-      if (ctx.hasUI)
-        ctx.ui.setStatus(
-          EXTENSION_ID,
-          ctx.ui.theme.fg("warning", "token tracking unavailable"),
-        );
+      try {
+        if (ctx.hasUI)
+          ctx.ui.setStatus(
+            EXTENSION_ID,
+            ctx.ui.theme.fg("warning", "token tracking unavailable"),
+          );
+      } catch {
+        // The context may have become stale during the refresh.
+      }
     });
   }
 
