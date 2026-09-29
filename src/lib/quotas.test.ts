@@ -1,7 +1,12 @@
 import type { AuthStorage } from "@mariozechner/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { QuotasResult } from "../types/quotas.js";
-import { clearQuotaCache, fetchProviderQuotas } from "./quotas.js";
+import {
+  clearQuotaCache,
+  fetchProviderQuotas,
+  quotaProviderForSource,
+  quotaSourceForModelProvider,
+} from "./quotas.js";
 
 const successResult: QuotasResult = {
   success: true,
@@ -18,6 +23,7 @@ const { fetcherMocks } = vi.hoisted(() => ({
     zai: vi.fn(),
     "opencode-go": vi.fn(),
     "kimi-coding": vi.fn(),
+    "claude-bridge": vi.fn(),
   },
 }));
 
@@ -81,5 +87,33 @@ describe("fetchProviderQuotas", () => {
     const result = await fetchProviderQuotas(authStorage, "kimi-coding");
 
     expect(result).toBe(successResult);
+  });
+});
+
+describe("quotaSourceForModelProvider", () => {
+  it("maps claude-bridge models to the Claude Code Anthropic source", () => {
+    expect(quotaSourceForModelProvider("claude-bridge")).toBe("claude-bridge");
+    expect(quotaProviderForSource("claude-bridge")).toBe("anthropic");
+  });
+
+  it("keeps supported providers and ignores unknown ones", () => {
+    expect(quotaSourceForModelProvider("anthropic")).toBe("anthropic");
+    expect(quotaProviderForSource("anthropic")).toBe("anthropic");
+    expect(quotaSourceForModelProvider("some-other-provider")).toBeUndefined();
+    expect(quotaSourceForModelProvider(undefined)).toBeUndefined();
+  });
+});
+
+describe("fetchProviderQuotas for claude-bridge", () => {
+  it("uses the claude-bridge fetcher with a cache separate from anthropic", async () => {
+    fetcherMocks["claude-bridge"].mockResolvedValue(successResult);
+    fetcherMocks.anthropic.mockResolvedValue(successResult);
+
+    await fetchProviderQuotas(authStorage, "claude-bridge");
+    await fetchProviderQuotas(authStorage, "claude-bridge");
+    await fetchProviderQuotas(authStorage, "anthropic");
+
+    expect(fetcherMocks["claude-bridge"]).toHaveBeenCalledTimes(1);
+    expect(fetcherMocks.anthropic).toHaveBeenCalledTimes(1);
   });
 });

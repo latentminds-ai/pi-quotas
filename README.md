@@ -84,7 +84,7 @@ Settings can be saved globally (`~/.pi/agent/extensions/quotas.json`) or per-pro
 
 | Provider       | Windows                                                        | Details                                                                                             |
 | -------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Anthropic      | 5h, 7d, per-model 7d, extra usage                              | Utilization percentages; optional overage budget in local currency                                  |
+| Anthropic      | 5h, 7d, per-model 7d, extra usage                              | Utilization percentages; optional overage budget in local currency. Also covers `claude-bridge` models ([pi-claude-bridge](https://github.com/elidickinson/pi-claude-bridge)) |
 | OpenAI Codex   | 5h, 7d, credits, spend cap                                     | Rate-limit percentages; credit balance; spend-cap reached/OK                                        |
 | GitHub Copilot | Premium/chat/completions per month                             | Remaining/entitlement counts with overage indicators                                                |
 | OpenRouter     | Monthly budget, daily/weekly/monthly usage                     | USD spending tracking with cents precision; optional per-key budget limits; UTC-based period resets |
@@ -100,7 +100,7 @@ Settings can be saved globally (`~/.pi/agent/extensions/quotas.json`) or per-pro
 
 pi-quotas reads existing Pi auth entries from `~/.pi/agent/auth.json`:
 
-- `anthropic` — Anthropic OAuth token
+- `anthropic` — Anthropic OAuth token (falls back to the Claude Code login, see below)
 - `openai-codex` — Codex access token (also reads `~/.codex/auth.json` for the account ID)
 - `github-copilot` — GitHub Copilot OAuth token (falls back to `gh auth token` if needed)
 - `openrouter` — OpenRouter API key (Bearer token)
@@ -112,6 +112,15 @@ pi-quotas reads existing Pi auth entries from `~/.pi/agent/auth.json`:
 - `ollama-cloud` — Ollama Cloud API key (also reads `OLLAMA_API_KEY` if set)
 
 No additional setup is required - if Pi can use the provider, pi-quotas can check its quotas. For Synthetic, export `SYNTHETIC_API_KEY` in your shell or Pi environment.
+
+### Claude Code login (`claude-bridge`)
+
+Models from [pi-claude-bridge](https://github.com/elidickinson/pi-claude-bridge) (provider `claude-bridge`) run on Claude Code's own login rather than a Pi auth entry. When one is active, the footer status and quota warnings show the Anthropic subscription windows using that login:
+
+- macOS: the `Claude Code-credentials` keychain item, then `~/.claude/.credentials.json` (or `$CLAUDE_CONFIG_DIR/.credentials.json`)
+- Other platforms: `~/.claude/.credentials.json` (or `$CLAUDE_CONFIG_DIR/.credentials.json`)
+
+`/anthropic:quotas` and `/quotas` use the same login when Pi has no `anthropic` OAuth token; Pi's own token takes priority when present. pi-quotas never refreshes the Claude Code token (that would sign Claude Code out); if it has expired, open Claude Code to refresh it.
 
 ## Requirements
 

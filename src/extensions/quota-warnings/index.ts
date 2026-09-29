@@ -12,8 +12,9 @@ import {
 import { quotaAuthStorage } from "../../lib/auth.js";
 import {
   fetchProviderQuotas,
-  isSupportedProvider,
   PROVIDER_LABELS,
+  quotaProviderForSource,
+  quotaSourceForModelProvider,
 } from "../../lib/quotas.js";
 import {
   assessWindow,
@@ -54,15 +55,15 @@ export default async function (pi: ExtensionAPI) {
   let enabled = configLoader.getConfig().quotaWarnings;
   let currentContext: ExtensionContext | undefined;
   async function check(ctx: ExtensionContext, onlyNew: boolean): Promise<void> {
-    const provider = ctx.model?.provider;
-    if (!ctx.hasUI || !provider || !isSupportedProvider(provider)) return;
+    const source = quotaSourceForModelProvider(ctx.model?.provider);
+    if (!ctx.hasUI || !source) return;
     const now = Date.now();
     if (onlyNew && now - lastFetchAt < MIN_FETCH_INTERVAL_MS) return;
     lastFetchAt = now;
 
     const result = await fetchProviderQuotas(
       quotaAuthStorage(ctx.modelRegistry),
-      provider,
+      source,
     );
     if (!result.success) return;
 
@@ -74,7 +75,7 @@ export default async function (pi: ExtensionAPI) {
     const toNotify = onlyNew
       ? risky.filter((entry) =>
         shouldNotify(
-          `${provider}:${entry.window.label}`,
+          `${source}:${entry.window.label}`,
           entry.assessment.severity,
         ),
       )
@@ -83,12 +84,12 @@ export default async function (pi: ExtensionAPI) {
 
     for (const entry of toNotify) {
       markNotified(
-        `${provider}:${entry.window.label}`,
+        `${source}:${entry.window.label}`,
         entry.assessment.severity,
       );
     }
 
-    const providerName = PROVIDER_LABELS[provider];
+    const providerName = PROVIDER_LABELS[quotaProviderForSource(source)];
 
     const lines = toNotify.map(({ window, assessment }) => {
       const projected = Math.round(assessment.projectedPercent);

@@ -21,7 +21,8 @@ vi.mock("../../config.js", () => ({
 }));
 
 vi.mock("../../lib/quotas.js", () => ({
-  isSupportedProvider: (provider: string | undefined) => provider === "anthropic",
+  quotaSourceForModelProvider: (provider: string | undefined) =>
+    provider === "anthropic" || provider === "claude-bridge" ? provider : undefined,
   fetchProviderQuotas: vi.fn(async () => ({
     success: true,
     data: { provider: "anthropic", windows: [] },
@@ -178,5 +179,38 @@ describe("usage-status extension lifecycle", () => {
     const last = calls[calls.length - 1]?.[1];
     expect(last).toBeUndefined();
     expect(calls.some((c) => c[1] === "usage unavailable")).toBe(false);
+  });
+
+  it("shows Anthropic subscription windows for claude-bridge models", async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchProviderQuotas).mockResolvedValueOnce({
+      success: true,
+      data: {
+        provider: "anthropic",
+        windows: [
+          {
+            provider: "anthropic",
+            label: "5h",
+            usedPercent: 42,
+            resetsAt: new Date(Date.now() + 60 * 60 * 1000),
+            windowSeconds: 5 * 60 * 60,
+            usedValue: 42,
+            limitValue: 100,
+          },
+        ],
+      },
+    });
+
+    const { pi, emitExtensionEvent } = createFakePi();
+    const { ctx, setStatus } = createContext("claude-bridge");
+
+    await usageStatusExtension(pi);
+    await emitExtensionEvent("session_start", ctx);
+    await vi.runOnlyPendingTimersAsync();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fetchProviderQuotas).toHaveBeenCalledWith(expect.anything(), "claude-bridge");
+    const calls = setStatus.mock.calls as unknown as Array<[string, string | undefined]>;
+    expect(calls.some((c) => c[1]?.startsWith("5h:"))).toBe(true);
   });
 });
