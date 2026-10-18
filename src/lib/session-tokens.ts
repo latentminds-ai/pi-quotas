@@ -137,6 +137,55 @@ async function discoverSessionFiles(): Promise<string[]> {
   return files;
 }
 
+type ParsedSession = {
+  session: SessionUsage;
+  models: Map<string, ModelUsage>;
+} | null;
+
+/**
+ * Parsed results keyed by file path. A session file only grows while its
+ * session runs, so an unchanged mtime and size mean an unchanged result.
+ */
+const parseCache = new Map<
+  string,
+  { mtimeMs: number; size: number; result: ParsedSession }
+>();
+
+/**
+ * Parse a session file unless it was last modified before `since`: a file
+ * untouched since then was also created before then, so every window
+ * starting at `since` excludes it. Unchanged files come from the cache.
+ */
+async function readSessionFile(
+  filePath: string,
+  since?: Date,
+): Promise<ParsedSession> {
+  let fileStat;
+  try {
+    fileStat = await stat(filePath);
+  } catch {
+    parseCache.delete(filePath);
+    return null;
+  }
+  if (since && fileStat.mtime < since) return null;
+
+  const cached = parseCache.get(filePath);
+  if (
+    cached &&
+    cached.mtimeMs === fileStat.mtimeMs &&
+    cached.size === fileStat.size
+  ) {
+    return cached.result;
+  }
+  const result = await parseSessionFile(filePath);
+  parseCache.set(filePath, {
+    mtimeMs: fileStat.mtimeMs,
+    size: fileStat.size,
+    result,
+  });
+  return result;
+}
+
 /**
  * Parse a single JSONL session file and extract token usage from assistant messages.
  * Returns session metadata + per-model token aggregates.
@@ -272,6 +321,10 @@ export async function aggregateAllSessions(options?: {
   limit?: number;
 }): Promise<AggregateResult> {
   const files = await discoverSessionFiles();
+  const present = new Set(files);
+  for (const cachedPath of parseCache.keys()) {
+    if (!present.has(cachedPath)) parseCache.delete(cachedPath);
+  }
 
   const totals = emptyBuckets();
   const byModelMap = new Map<string, ModelUsage>();
@@ -286,7 +339,9 @@ export async function aggregateAllSessions(options?: {
   const CONCURRENCY = 16;
   for (let i = 0; i < files.length; i += CONCURRENCY) {
     const batch = files.slice(i, i + CONCURRENCY);
-    const results = await Promise.all(batch.map((f) => parseSessionFile(f)));
+    const results = await Promise.all(
+      batch.map((f) => readSessionFile(f, options?.since)),
+    );
 
     for (const result of results) {
       if (!result) continue;

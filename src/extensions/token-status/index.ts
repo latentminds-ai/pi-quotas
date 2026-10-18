@@ -44,17 +44,17 @@ async function computeRollingCosts(cwd?: string): Promise<RollingWindowCosts> {
   const now = new Date();
   const { since5h, sinceWeekly, sinceMonthly } = computeWindowTimestamps(now);
 
-  // Run all three aggregations in parallel
-  const [result5h, resultWeekly, resultMonthly] = await Promise.all([
-    aggregateAllSessions({ cwd, since: since5h }),
-    aggregateAllSessions({ cwd, since: sinceWeekly }),
-    aggregateAllSessions({ cwd, since: sinceMonthly }),
-  ]);
+  // One pass over the widest window; the narrower windows are subsets of it.
+  const monthly = await aggregateAllSessions({ cwd, since: sinceMonthly });
+  const costSince = (since: Date): number =>
+    monthly.bySession
+      .filter((session) => session.created >= since)
+      .reduce((total, session) => total + session.tokens.costTotal, 0);
 
   return {
-    rolling5h: result5h.totals.costTotal,
-    weekly: resultWeekly.totals.costTotal,
-    monthly: resultMonthly.totals.costTotal,
+    rolling5h: costSince(since5h),
+    weekly: costSince(sinceWeekly),
+    monthly: monthly.totals.costTotal,
   };
 }
 
@@ -133,11 +133,13 @@ function createTokenStatusRefresher() {
 
   return {
     async refreshFor(ctx: ExtensionContext): Promise<void> {
-      activeContext = ctx;
       if (!isGoProvider(ctx.model?.provider)) {
+        // The periodic refresh must never aggregate for a non-Go session.
+        activeContext = undefined;
         ctx.ui.setStatus(EXTENSION_ID, undefined);
         return;
       }
+      activeContext = ctx;
       await update(ctx);
     },
     start(): void {
@@ -188,7 +190,7 @@ export default async function (pi: ExtensionAPI) {
       refresher.stop(currentContext);
       return;
     }
-    if (currentContext) {
+    if (currentContext && isGoProvider(currentContext.model?.provider)) {
       refresher.start();
       scheduleRefresh(currentContext);
     }
