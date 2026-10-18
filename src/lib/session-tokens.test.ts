@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { appendFile, mkdtemp, mkdir, rm, utimes, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   addBuckets,
+  aggregateAllSessions,
   emptyBuckets,
   formatCost,
   formatNumber,
@@ -133,5 +137,96 @@ describe("formatTokenSummary", () => {
   it("handles empty buckets", () => {
     const result = formatTokenSummary(emptyBuckets());
     expect(result).toBe("");
+  });
+});
+
+describe("aggregateAllSessions", () => {
+  let agentDir: string;
+  let projectDir: string;
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+
+  function assistantLine(cost: number): string {
+    return JSON.stringify({
+      type: "message",
+      message: {
+        role: "assistant",
+        provider: "anthropic",
+        model: "claude",
+        usage: { input: 1, output: 1, totalTokens: 2, cost: { total: cost } },
+      },
+    });
+  }
+
+  async function writeSession(name: string, created: Date, costs: number[]) {
+    const header = JSON.stringify({
+      type: "session",
+      id: name,
+      cwd: "/project",
+      timestamp: created.toISOString(),
+    });
+    const path = join(projectDir, `${name}.jsonl`);
+    await writeFile(path, [header, ...costs.map(assistantLine)].join("\n") + "\n");
+    return path;
+  }
+
+  beforeEach(async () => {
+    agentDir = await mkdtemp(join(tmpdir(), "pi-quotas-sessions-"));
+    projectDir = join(agentDir, "sessions", "--project--");
+    await mkdir(projectDir, { recursive: true });
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+  });
+
+  afterEach(async () => {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    await rm(agentDir, { recursive: true, force: true });
+  });
+
+  it("does not read files last modified before the window", async () => {
+    const now = Date.now();
+    // The header claims a recent start, so reading the file would count it;
+    // its mtime alone must keep it out of the 30-day pass.
+    const stale = await writeSession("stale", new Date(now - 3_600_000), [5]);
+    const staleTime = new Date(now - 60 * 86_400_000);
+    await utimes(stale, staleTime, staleTime);
+    await writeSession("recent", new Date(now - 3_600_000), [1]);
+
+    const result = await aggregateAllSessions({
+      since: new Date(now - 30 * 86_400_000),
+    });
+
+    expect(result.sessionCount).toBe(1);
+    expect(result.totals.costTotal).toBe(1);
+  });
+
+  it("does not re-read an unchanged session file", async () => {
+    const path = await writeSession("same", new Date(), [1]);
+    const pinned = new Date(Date.now() - 60_000);
+    await utimes(path, pinned, pinned);
+    expect((await aggregateAllSessions()).totals.costTotal).toBe(1);
+
+    // Same size and mtime: a re-read would see cost 7, the cache keeps 1.
+    await writeSession("same", new Date(), [7]);
+    await utimes(path, pinned, pinned);
+
+    expect((await aggregateAllSessions()).totals.costTotal).toBe(1);
+  });
+
+  it("re-reads a session file after it grows", async () => {
+    const path = await writeSession("live", new Date(), [1]);
+    expect((await aggregateAllSessions()).totals.costTotal).toBe(1);
+
+    await appendFile(path, assistantLine(2) + "\n");
+
+    expect((await aggregateAllSessions()).totals.costTotal).toBe(3);
+  });
+
+  it("drops a deleted session file", async () => {
+    const path = await writeSession("gone", new Date(), [4]);
+    expect((await aggregateAllSessions()).sessionCount).toBe(1);
+
+    await rm(path);
+
+    expect((await aggregateAllSessions()).sessionCount).toBe(0);
   });
 });
