@@ -70,5 +70,11 @@ export function getProviderCommandInfo(
         commandName: "ollama:quotas",
         title: "Ollama Cloud Quotas",
       };
+    case "antigravity":
+      return {
+        provider,
+        commandName: "antigravity:quotas",
+        title: "Antigravity Quotas",
+      };
   }
 }

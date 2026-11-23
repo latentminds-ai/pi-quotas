@@ -17,11 +17,21 @@ import { filterDashboardSnapshots } from "./visibility.js";
 
 type Snapshot = { provider: SupportedQuotaProvider; result: QuotasResult };
 
+function isRpcContext(ctx: ExtensionCommandContext): boolean {
+  return (ctx as ExtensionCommandContext & { mode?: string }).mode === "rpc";
+}
+
 async function openQuotaView(
   title: string,
   loadSnapshots: (force: boolean, signal?: AbortSignal) => Promise<Snapshot[]>,
   ctx: ExtensionCommandContext,
 ): Promise<void> {
+  if (isRpcContext(ctx)) {
+    const snapshots = await loadSnapshots(true);
+    ctx.ui.notify(formatSnapshotsForNotify(snapshots), "info");
+    return;
+  }
+
   const result = await ctx.ui.custom<null>((tui, theme, _kb, done) => {
     const controller = new AbortController();
     const component = new QuotasComponent(

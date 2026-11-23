@@ -876,3 +876,227 @@ export function parseXaiUsage(data: any): QuotaWindow[] {
 
   return windows;
 }
+
+export interface AntigravityQuotaBucket {
+  bucketId?: string;
+  displayName?: string;
+  window?: string;
+  resetTime?: string;
+  description?: string;
+  remainingFraction?: number;
+}
+
+export interface AntigravityQuotaGroup {
+  displayName?: string;
+  description?: string;
+  buckets?: AntigravityQuotaBucket[];
+}
+
+export interface AntigravityModelInfo {
+  displayName?: string;
+  quotaInfo?: {
+    remainingFraction?: number;
+    resetTime?: string;
+  };
+}
+
+export interface AntigravityUsageData {
+  groups?: AntigravityQuotaGroup[];
+  models?: Record<string, AntigravityModelInfo>;
+  description?: string;
+}
+
+const ANTIGRAVITY_MODEL_FAMILIES = [
+  {
+    display: "Claude",
+    keys: [
+      "claude-opus-4-6-thinking",
+      "claude-sonnet-4-6",
+      "claude-opus-4-5-thinking",
+      "claude-opus-4-6",
+      "claude-sonnet-4-5",
+    ],
+  },
+  {
+    display: "Gemini Pro",
+    keys: [
+      "gemini-3.1-pro-low",
+      "gemini-pro-agent",
+      "gemini-3.1-pro-high",
+      "gemini-3.1-pro",
+      "gemini-3-pro-high",
+      "gemini-2.5-pro",
+    ],
+  },
+  {
+    display: "Gemini Flash",
+    keys: [
+      "gemini-3.6-flash-high",
+      "gemini-3.7-flash-tiered",
+      "gemini-3.6-flash-medium",
+      "gemini-3-flash",
+      "gemini-3.5-flash-low",
+      "gemini-3.1-flash-lite",
+    ],
+  },
+  {
+    display: "GPT-OSS 120B",
+    keys: [
+      "gpt-oss-120b-medium",
+      "gpt-oss-120b",
+      "gpt-oss-120b-high",
+    ],
+  },
+];
+
+// Google Antigravity quotas.
+// Primary: retrieveUserQuotaSummary returns aggregate quota groups (Gemini, Claude & GPT)
+// with weekly and 5-hour limit buckets.
+// Fallback: fetchAvailableModels returns per-model remaining fractions.
+export function parseAntigravityUsage(
+  data: AntigravityUsageData | any,
+): QuotaWindow[] {
+  const windows: QuotaWindow[] = [];
+
+  // 1. Quota Summary groups (primary source of truth)
+  if (Array.isArray(data?.groups) && data.groups.length > 0) {
+    for (const group of data.groups as AntigravityQuotaGroup[]) {
+      const groupName = group.displayName || "";
+      let baseLabel = "Antigravity";
+      if (/gemini/i.test(groupName)) {
+        baseLabel = "Gemini";
+      } else if (/claude/i.test(groupName)) {
+        baseLabel = "Claude";
+      } else if (groupName) {
+        baseLabel = groupName.replace(/\s+models?$/i, "").trim();
+      }
+
+      const buckets = Array.isArray(group.buckets) ? group.buckets : [];
+      // Sort buckets so 5h limit appears before weekly limit
+      const sortedBuckets = [...buckets].sort((a, b) => {
+        const isWeeklyA =
+          a.window === "weekly" ||
+          /weekly/i.test(a.bucketId || "") ||
+          /weekly/i.test(a.displayName || "");
+        const isWeeklyB =
+          b.window === "weekly" ||
+          /weekly/i.test(b.bucketId || "") ||
+          /weekly/i.test(b.displayName || "");
+        if (!isWeeklyA && isWeeklyB) return -1;
+        if (isWeeklyA && !isWeeklyB) return 1;
+        return 0;
+      });
+
+      for (const bucket of sortedBuckets) {
+        const windowType = bucket.window || "";
+        const bucketId = bucket.bucketId || "";
+        const bucketDisplayName = bucket.displayName || "";
+
+        let windowName = "5h";
+        let windowSeconds = 5 * 3600;
+
+        if (
+          windowType === "weekly" ||
+          /weekly/i.test(bucketId) ||
+          /weekly/i.test(bucketDisplayName)
+        ) {
+          windowName = "Weekly";
+          windowSeconds = 7 * 24 * 3600;
+        } else if (
+          windowType === "5h" ||
+          /5h/i.test(bucketId) ||
+          /5-?hour/i.test(bucketDisplayName) ||
+          /five\s*hour/i.test(bucketDisplayName)
+        ) {
+          windowName = "5h";
+          windowSeconds = 5 * 3600;
+        } else if (bucketDisplayName) {
+          windowName = bucketDisplayName;
+        }
+
+        const remainingFraction =
+          typeof bucket.remainingFraction === "number"
+            ? bucket.remainingFraction
+            : 1;
+        const usedPercent = Math.max(
+          0,
+          Math.min(100, Math.round((1 - remainingFraction) * 100)),
+        );
+        const resetsAt = parseDateish(bucket.resetTime);
+        const nowMs = Date.now();
+        if (
+          resetsAt.getTime() > nowMs &&
+          windowSeconds === 5 * 3600 &&
+          windowType !== "5h"
+        ) {
+          windowSeconds = Math.max(
+            1,
+            Math.round((resetsAt.getTime() - nowMs) / 1000),
+          );
+        }
+
+        windows.push({
+          provider: "antigravity",
+          label: `${baseLabel} (${windowName})`,
+          usedPercent,
+          resetsAt,
+          windowSeconds,
+          usedValue: usedPercent,
+          limitValue: 100,
+          limited: remainingFraction <= 0,
+          showPace: false,
+          nextLabel: "Resets",
+        });
+      }
+    }
+
+    if (windows.length > 0) {
+      return windows;
+    }
+  }
+
+  // 2. Fallback: model-level quota info from fetchAvailableModels
+  const models = data?.models ?? {};
+
+  for (const family of ANTIGRAVITY_MODEL_FAMILIES) {
+    let foundEntry: AntigravityModelInfo | undefined;
+    for (const key of family.keys) {
+      if (models[key]?.quotaInfo) {
+        foundEntry = models[key];
+        break;
+      }
+    }
+
+    if (foundEntry?.quotaInfo) {
+      const remainingFraction =
+        typeof foundEntry.quotaInfo.remainingFraction === "number"
+          ? foundEntry.quotaInfo.remainingFraction
+          : 1;
+      const usedPercent = Math.max(
+        0,
+        Math.min(100, Math.round((1 - remainingFraction) * 100)),
+      );
+      const resetsAt = parseDateish(foundEntry.quotaInfo.resetTime);
+      const nowMs = Date.now();
+      const windowSeconds =
+        resetsAt.getTime() > nowMs
+          ? Math.max(1, Math.round((resetsAt.getTime() - nowMs) / 1000))
+          : 5 * 60 * 60;
+
+      windows.push({
+        provider: "antigravity",
+        label: family.display,
+        usedPercent,
+        resetsAt,
+        windowSeconds,
+        usedValue: usedPercent,
+        limitValue: 100,
+        limited: remainingFraction <= 0,
+        showPace: false,
+        nextLabel: "Resets",
+      });
+    }
+  }
+
+  return windows;
+}
