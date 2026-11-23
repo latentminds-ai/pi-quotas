@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Grok quota visibility**: zero-usage billing periods now remain visible when xAI omits the zero-valued percentage, and billing requests include the required xAI token-auth marker.
+
 ## [0.5.0] - 2026-08-31
 
 ### Added

@@ -9,6 +9,7 @@ import {
   fetchOllamaCloudQuotasWithToken,
   fetchOpenRouterQuotasWithToken,
   fetchSyntheticQuotas,
+  fetchXaiQuotas,
   fetchXaiQuotasWithToken,
 } from "./fetch.js";
 
@@ -475,9 +476,41 @@ describe("fetchXaiQuotasWithToken", () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: "Bearer xai-token",
+          "X-XAI-Token-Auth": "xai-grok-cli",
         }),
       }),
     );
+  });
+
+  it("resolves the native xAI credential from Pi auth storage", async () => {
+    const getApiKey = vi.fn(async (provider: string) =>
+      provider === "xai" ? "xai-access-token" : undefined,
+    );
+    const auth = { getApiKey } as unknown as AuthStorage;
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          config: {
+            currentPeriod: {
+              type: "USAGE_PERIOD_TYPE_WEEKLY",
+              start: "2026-09-01T17:13:55Z",
+              end: "2026-09-08T17:13:55Z",
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+    ) as any;
+
+    const result = await fetchXaiQuotas(auth);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.windows).toHaveLength(1);
+      expect(result.data.windows[0].usedPercent).toBe(0);
+    }
+    expect(getApiKey).toHaveBeenCalledOnce();
+    expect(getApiKey).toHaveBeenCalledWith("xai");
   });
 
   it("reports Grok billing HTTP failures", async () => {

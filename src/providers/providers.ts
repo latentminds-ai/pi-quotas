@@ -810,11 +810,11 @@ export function parseXaiUsage(data: any): QuotaWindow[] {
   const periodLabel = isWeekly ? "Week" : "Month";
   const windows: QuotaWindow[] = [];
 
-  const creditUsagePercent = Number(config.creditUsagePercent);
-  if (
-    config.creditUsagePercent != null &&
-    Number.isFinite(creditUsagePercent)
-  ) {
+  // The billing response omits protobuf scalar fields when their value is 0.
+  // A valid period without creditUsagePercent therefore means 0% used.
+  const creditUsagePercent =
+    config.creditUsagePercent == null ? 0 : Number(config.creditUsagePercent);
+  if (Number.isFinite(creditUsagePercent)) {
     windows.push({
       provider: "xai",
       label: `${periodLabel} (credits)`,
