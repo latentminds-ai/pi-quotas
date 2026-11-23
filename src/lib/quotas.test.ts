@@ -15,9 +15,12 @@ const { fetcherMocks } = vi.hoisted(() => ({
     "github-copilot": vi.fn(),
     openrouter: vi.fn(),
     synthetic: vi.fn(),
+    xai: vi.fn(),
     zai: vi.fn(),
     "opencode-go": vi.fn(),
     "kimi-coding": vi.fn(),
+    "ollama-cloud": vi.fn(),
+    antigravity: vi.fn(),
   },
 }));
 

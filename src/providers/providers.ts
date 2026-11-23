@@ -876,3 +876,104 @@ export function parseXaiUsage(data: any): QuotaWindow[] {
 
   return windows;
 }
+
+export interface AntigravityModelInfo {
+  displayName?: string;
+  quotaInfo?: {
+    remainingFraction?: number;
+    resetTime?: string;
+  };
+}
+
+const ANTIGRAVITY_MODEL_FAMILIES = [
+  {
+    display: "Claude",
+    keys: [
+      "claude-opus-4-6-thinking",
+      "claude-sonnet-4-6",
+      "claude-opus-4-5-thinking",
+      "claude-opus-4-6",
+      "claude-sonnet-4-5",
+    ],
+  },
+  {
+    display: "Gemini Pro",
+    keys: [
+      "gemini-3.1-pro-low",
+      "gemini-pro-agent",
+      "gemini-3.1-pro-high",
+      "gemini-3.1-pro",
+      "gemini-3-pro-high",
+      "gemini-2.5-pro",
+    ],
+  },
+  {
+    display: "Gemini Flash",
+    keys: [
+      "gemini-3.6-flash-high",
+      "gemini-3.7-flash-tiered",
+      "gemini-3.6-flash-medium",
+      "gemini-3-flash",
+      "gemini-3.5-flash-low",
+      "gemini-3.1-flash-lite",
+    ],
+  },
+  {
+    display: "GPT-OSS 120B",
+    keys: [
+      "gpt-oss-120b-medium",
+      "gpt-oss-120b",
+      "gpt-oss-120b-high",
+    ],
+  },
+];
+
+// Google Antigravity quotas. The fetchAvailableModels endpoint returns available
+// models along with their remaining quota fractions and reset timestamps.
+export function parseAntigravityUsage(data: {
+  models?: Record<string, AntigravityModelInfo>;
+}): QuotaWindow[] {
+  const windows: QuotaWindow[] = [];
+  const models = data?.models ?? {};
+
+  for (const family of ANTIGRAVITY_MODEL_FAMILIES) {
+    let foundEntry: AntigravityModelInfo | undefined;
+    for (const key of family.keys) {
+      if (models[key]?.quotaInfo) {
+        foundEntry = models[key];
+        break;
+      }
+    }
+
+    if (foundEntry?.quotaInfo) {
+      const remainingFraction =
+        typeof foundEntry.quotaInfo.remainingFraction === "number"
+          ? foundEntry.quotaInfo.remainingFraction
+          : 1;
+      const usedPercent = Math.max(
+        0,
+        Math.min(100, Math.round((1 - remainingFraction) * 100)),
+      );
+      const resetsAt = parseDateish(foundEntry.quotaInfo.resetTime);
+      const nowMs = Date.now();
+      const windowSeconds =
+        resetsAt.getTime() > nowMs
+          ? Math.max(1, Math.round((resetsAt.getTime() - nowMs) / 1000))
+          : 5 * 60 * 60;
+
+      windows.push({
+        provider: "antigravity",
+        label: family.display,
+        usedPercent,
+        resetsAt,
+        windowSeconds,
+        usedValue: usedPercent,
+        limitValue: 100,
+        showPace: false,
+        nextLabel: "Resets",
+      });
+    }
+  }
+
+  return windows;
+}
