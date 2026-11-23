@@ -42,6 +42,17 @@ const SHORT_LABELS: Record<string, string> = {
   "Requests / 5h": "5h",
   "Search / hour": "search",
   "Free Tool Calls / day": "tools",
+  // Antigravity labels
+  Claude: "claude",
+  "Gemini Pro": "pro",
+  "Gemini Flash": "flash",
+  "GPT-OSS 120B": "gpt",
+  "Gemini (5h)": "gem-5h",
+  "Gemini (Weekly)": "gem-wk",
+  "Claude (5h)": "claude-5h",
+  "Claude (Weekly)": "claude-wk",
+  "Claude & GPT (5h)": "claude-5h",
+  "Claude & GPT (Weekly)": "claude-wk",
 };
 
 /**
@@ -99,7 +110,7 @@ export function formatWindowStatus(theme: ThemeLike, w: WindowStatus): string {
     valueText = theme.fg(color, `${remaining}/${w.limitValue}`);
   } else {
     const remaining = Math.max(0, Math.min(100, Math.round(100 - w.usedPercent)));
-    valueText = theme.fg(color, `${remaining}% left`);
+    valueText = theme.fg(color, `${remaining}%`);
   }
 
   const limitTag = w.limited ? theme.fg("error", " !") : "";
